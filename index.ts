@@ -1,54 +1,64 @@
 import Bot from "./objects/Bot";
 import * as crypto from "crypto";
 import * as config from "./config.json";
+import * as express from "express";
 import * as nodemailer from "nodemailer";
 import {
     ButtonInteraction,
     CommandInteraction,
     GuildMember,
     Interaction,
-    InteractionReplyOptions,
     Message,
-    MessageActionRow,
-    Modal,
     ModalSubmitInteraction,
     Role,
     SelectMenuInteraction,
-    TextChannel,
-    TextInputComponent
+    User
 } from "discord.js";
-import {collections} from "./database/database.service";
 import Student from "./objects/Student";
+import InteractionStatus, {InteractionType} from "./objects/InteractionStatus";
+import {Router} from "./objects/Router";
+import PurdueModal from "./objects/modals/Purdue.Modal";
 
 export const bot = new Bot();
 
-bot.login(config.token).then();
-
-bot.on('ready', async () => {
+bot.login(config.token).then(async () => {
     await bot.init();
-    //readSpreadsheet().then(() => updateRegistrations().then());
+    const app = express();
+    app.use("/", Router);
+    app.listen(1623, () => {
+        console.info(`Server started at http://localhost:1623`)
+    })
 });
 
 bot.on('interactionCreate', (interaction: Interaction) => {
-    if (interaction.isApplicationCommand()) handleCommand(interaction as CommandInteraction).catch();
-    else if (interaction.isButton()) handleButton(interaction as ButtonInteraction).catch();
-    else if (interaction.isSelectMenu()) handleSelectMenu(interaction as SelectMenuInteraction).catch();
-    else if (interaction.isModalSubmit()) handleModal(interaction as ModalSubmitInteraction).catch();
+    let status: Promise<InteractionStatus>;
+    if (interaction.isButton()) status = receiveButton(interaction);
+    if (interaction.isSelectMenu()) status = receiveSelectMenu(interaction);
+    if (interaction.isCommand()) status = receiveCommand(interaction);
+    if (interaction.isModalSubmit()) status = receiveModal(interaction);
+
+    status.then((response) => {
+        // console.log(response.type + " - " + response.status);
+        if (!response.status) {
+            if (interaction.isRepliable()) {
+                interaction.reply({content: "Sorry, that didn't work.", ephemeral: true}).catch();
+            }
+            bot.logger.error(`${response.type} by ${response.user.username} failed.`, response.error).catch();
+        }
+    }).catch((error) => {
+        bot.logger.error(`Unknown Interaction failed.`, error).catch();
+    });
 });
 
 bot.on("messageCreate", (message: Message) => {
-    handleMessage(message).catch();
+    receiveMessage(message).catch();
 })
-
-bot.on('warn', (warning) => {
-    bot.logger.warn(warning);
-});
 
 /**
  * Executes logic on a new Message
  * @param message
  */
-async function handleMessage(message: Message) {
+async function receiveMessage(message: Message) {
 
 }
 
@@ -56,27 +66,15 @@ async function handleMessage(message: Message) {
  * Executes logic on a Command Interaction
  * @param interaction
  */
-async function handleCommand(interaction: CommandInteraction) {
+async function receiveCommand(interaction: CommandInteraction): Promise<InteractionStatus> {
+    const user = interaction.user;
+    const command = bot.commands.get(interaction.commandName);
+
     try {
-        await interaction.deferReply();
-        const command = bot.commands.get(interaction.commandName);
-        let response = await command.execute(interaction);
-        if (response) {
-            if (response.ephemeral) {
-                await interaction.deleteReply();
-                await interaction.followUp(response);
-            } else {
-                await interaction.deleteReply();
-                await interaction.channel.send(response);
-            }
-        }
-        await bot.logger.info(`${interaction.commandName} command issued by ${interaction.user.username}`);
+        await command.execute(interaction);
+        return new InteractionStatus(InteractionType.Command, user, true, null);
     } catch (error) {
-        await bot.logger.error(`${interaction.commandName} command issued by ${interaction.user.username} failed`, error);
-        try {
-            await interaction.deleteReply();
-            await interaction.followUp({content: "There was an error running this command.", ephemeral: true});
-        } catch (e) {}
+        return new InteractionStatus(InteractionType.Command, user, false, error);
     }
 }
 
@@ -84,51 +82,70 @@ async function handleCommand(interaction: CommandInteraction) {
  * Executes logic on a Button Interaction
  * @param interaction
  */
-async function handleButton(interaction: ButtonInteraction) {
-    try {
-        let response;
-        let id = interaction.customId;
-        switch (id) {
-            case "join": case "leave": case "bump":
-                response = await bot.commands.get("queue").execute(interaction);
-                break;
+async function receiveButton(interaction: ButtonInteraction): Promise<InteractionStatus> {
+    const user: User = interaction.user;
+    const role: Role = await bot.guild.roles.fetch(interaction.customId);
 
-            default:
-                let role = await interaction.guild.roles.fetch(id);
-                let guildMember = interaction.member as GuildMember;
-                response = await requestRole(role, guildMember, interaction);
-                break;
+    try {
+
+        const member = await bot.guild.members.fetch(user);
+
+        if (!role) {
+            if (interaction.customId == "team_one" || interaction.customId == "team_two" || interaction.customId == "reset") await bot.commands.get("pick").execute(interaction);
+            else if (interaction.customId == "join" || interaction.customId == "leave" || interaction.customId == "bump") await bot.commands.get("queue").execute(interaction);
+            else if (interaction.customId == "register") await bot.commands.get("register").execute(interaction);
+        } else {
+            if (role.id == config.roles.purdue) {
+                const student: Student = await Student.get(user.id);
+                if (student && student.status) {
+                    await member.roles.add(role.id);
+                    await interaction.reply({content: `You are verified. Thank you!`, ephemeral: true});
+                } else {
+                    await interaction.showModal(new PurdueModal());
+                }
+            } else {
+                if (member.roles.cache.has(role.id)) {
+                    const response = await removeRankedRoles(member, role);
+                    if (response) await interaction.reply({content: response, ephemeral: true});
+                    if (interaction.replied) await interaction.followUp({content: `You removed **<@&${role.id}>**.`, ephemeral: true});
+                    else await interaction.reply({content: `You removed **<@&${role.id}>**.`, ephemeral: true});
+                } else {
+                    const response = await applyRankedRoles(member, role);
+                    if (response) await interaction.reply({content: response, ephemeral: true});
+                    if (interaction.replied) await interaction.followUp({content: `You applied **<@&${role.id}>**.`, ephemeral: true});
+                    else await interaction.reply({content: `You applied **<@&${role.id}>**.`, ephemeral: true});
+                }
+            }
         }
-        if (response && response.content != null) {
-            try {
-                await interaction.reply(response);
-            } catch {}
-        }
-        await bot.logger.info(`${interaction.component.label} button used by ${interaction.user.username}`);
+        return new InteractionStatus(InteractionType.Button, user, true, null);
     } catch (error) {
-        await bot.logger.error(`${interaction.component.label} button used by ${interaction.user.username} failed`, error);
-        try {
-            await interaction.reply({content: "There was an error handling this button.", ephemeral: true});
-        } catch (ignored) {}
+        return new InteractionStatus(InteractionType.Button, user, false, error);
     }
 }
 
 /**
  * Executes logic on a SelectMenu Interaction
- * @param selectMenu
+ * @param interaction
  */
-async function handleSelectMenu(selectMenu: SelectMenuInteraction) {
-    let response;
-    try {
-        response = await bot.commands.get("pick").execute(selectMenu);
-        await bot.logger.info(`Select Menu option ${selectMenu.values[0]} selected by ${selectMenu.user.username}`);
+async function receiveSelectMenu(interaction: SelectMenuInteraction): Promise<InteractionStatus> {
+    const role = await bot.guild.roles.fetch(interaction.values[0]);
+    const user = interaction.user;
 
-        if (response != null && !selectMenu.replied) {
-            await selectMenu.reply(response);
+    try {
+        if (!role) return new InteractionStatus(InteractionType.Menu, user, false, new Error("Non-existent role"));
+        else {
+            const member: GuildMember = await bot.guild.members.fetch(user);
+            if (member.roles.cache.has(role.id)) {
+                await member.roles.remove(role.id);
+                await interaction.reply({content: `You removed **<@&${role.id}>**.`, ephemeral: true});
+            } else {
+                await member.roles.add(role.id);
+                await interaction.reply({content: `You applied **<@&${role.id}>**.`, ephemeral: true});
+            }
         }
+        return new InteractionStatus(InteractionType.Menu, user, true, null);
     } catch (error) {
-        await bot.logger.error(`Select Menu option ${selectMenu.values[0]} selected by ${selectMenu.user.username} failed`, error);
-        await selectMenu.reply({content: "There was an error handling this menu.", ephemeral: true});
+        return new InteractionStatus(InteractionType.Menu, user, false, error);
     }
 }
 
@@ -136,282 +153,60 @@ async function handleSelectMenu(selectMenu: SelectMenuInteraction) {
  * Executes logic on a ModalSubmit Interaction
  * @param interaction
  */
-async function handleModal(interaction: ModalSubmitInteraction) {
-    let response = {content: null, ephemeral: true};
-    let student: Student;
-    // let discord, uplay, purdue, captain, registrant, payment, json;
-    switch (interaction.customId) {
-        case "verify-start":
-            let email = interaction.fields.getTextInputValue("email");
-            student = Student.fromObject(await collections.students.findOne({_email: email}));
-            if (student && student.status) {
-                response.content = "This email is already in use.";
-            } else {
-                if (isValidEmail(email)) {
-                    let username = interaction.user.username;
-                    let hash = encrypt(interaction.user.id + "-" + Date.now());
-                    let token = hash.iv + "-" + hash.content;
-                    let url = `https://www.technowizzy.dev/api/v1/students/verify/${token}`;
-                    await sendEmail(email, url);
-                    await bot.logger.info(`New Student Registered - Username: ${username}`)
-                    await Student.post(new Student(interaction.user.id, username, email, 0, false));
-                    response.content = `A verification email was sent to \`${email}\`. Click the **Purdue Button** once you have verified!`;
-                } else {
-                    response.content = `The email you provided, \`${email}\`, is invalid. Please provide a valid Purdue email.`;
-                }
-            }
-            break;
+async function receiveModal(interaction: ModalSubmitInteraction): Promise<InteractionStatus> {
+    const user: User = interaction.user;
+    const email: string = interaction.fields.getTextInputValue("email");
 
-        case "duo":
-            response.content = "Sorry, registration has closed.";
+    try {
+        if (!isValidEmail(email)) {
+            await interaction.reply({content: `The address you provided, \`${email}\`, is invalid. Please provide a valid Purdue address.`, ephemeral: true});
+        } else {
+            const username = user.username;
+            const student = new Student(user.id, username, email, 0, false);
+            const hash = encrypt(user.id + "-" + Date.now());
+            const token = hash.iv + "-" + hash.content;
+            const url = `https://www.technowizzy.dev/api/v1/students/verify/${token}`;
+            await Student.post(student);
+            await sendEmail(email, url);
+            await interaction.reply({content: `An email was sent to \`${email}\`.`, ephemeral: true});
+        }
 
-            /*
-            if (fs.existsSync("./registrants.json")) {
-                json = JSON.parse(fs.readFileSync("./registrants.json").toString());
-            } else {
-                json = {}
-            }
-            let partnerUplay = interaction.fields.getTextInputValue("partner-uplay");
-            discord = interaction.user.tag;
-            uplay = interaction.fields.getTextInputValue("uplay");
-            purdue = (interaction.fields.getTextInputValue("purdue").toLowerCase() === "yes");
-            payment = interaction.fields.getTextInputValue("payment");
-            captain = (interaction.fields.getTextInputValue("captain").toLowerCase() === "yes");
-            if (uplay.length < 1) response.content = "Invalid Uplay username, please try again";
-            else {
-                if (payment.length < 1) response.content = "Invalid payment information, please try again";
-                else {
-                    if (partnerUplay.length < 1) response.content = "Invalid Partner Uplay username, please try again";
-                    else {
-                        registrant = new Registrant(uplay, discord, purdue, payment, false, false, captain, partnerUplay);
-                        json[registrant.discord] = registrant;
-                        fs.writeFileSync("./registrants.json", JSON.stringify(json, null, 2));
-                        response.content = `Your registration has been submitted.`;
-                    }
-                }
-            }
-             */
-            break;
-
-        case "solo":
-            response.content = "Sorry, registration has closed.";
-
-            /*
-            if (fs.existsSync("./registrants.json")) {
-                json = JSON.parse(fs.readFileSync("./registrants.json").toString());
-            } else {
-                json = {}
-            }
-            discord = interaction.user.tag;
-            uplay = interaction.fields.getTextInputValue("uplay");
-            purdue = (interaction.fields.getTextInputValue("purdue").toLowerCase() === "yes");
-            payment = interaction.fields.getTextInputValue("payment");
-            captain = (interaction.fields.getTextInputValue("captain").toLowerCase() === "yes");
-
-            if (uplay.length < 1) response.content = "Invalid Uplay username, please try again";
-            else {
-                if (payment.length < 1) response.content = "Invalid payment information, please try again";
-                else {
-                    registrant = new Registrant(uplay, discord, purdue, payment, true, false, captain, null);
-                    json[registrant.discord] = registrant;
-                    fs.writeFileSync("./registrants.json", JSON.stringify(json, null, 2));
-                    response.content = `Your registration has been submitted.`;
-                }
-            }
-             */
-
-            break;
-    }
-
-    if (response.content != null) {
-        await interaction.reply(response);
+        return new InteractionStatus(InteractionType.Modal, user, true, null);
+    } catch (error) {
+        return new InteractionStatus(InteractionType.Modal, user, false, error);
     }
 }
 
-/**
- * Executes logic for managing role requests
- * @param role the requested role
- * @param guildMember the requester
- * @param interaction the interaction
- */
-async function requestRole(role: Role, guildMember: GuildMember, interaction: ButtonInteraction) {
-    let response: InteractionReplyOptions = {content: null, ephemeral: true};
-    let hasRole = await checkIfMemberHasRole(role.id, guildMember);
-    let student = await Student.get(guildMember.id);
+async function applyRankedRoles(member: GuildMember, role: Role): Promise<string> {
+    await member.roles.add(role.id);
+        switch (role.id) {
+            case config.roles.ranks.radiant: return config.roles.ranks.onMessages.radiant;
+            case config.roles.ranks.immortal: return config.roles.ranks.onMessages.immortal;
+            case config.roles.ranks.ascendant: return config.roles.ranks.onMessages.ascendant;
+            case config.roles.ranks.diamond: return config.roles.ranks.onMessages.diamond;
+            case config.roles.ranks.platinum: return config.roles.ranks.onMessages.platinum;
+            case config.roles.ranks.gold: return config.roles.ranks.onMessages.gold;
+            case config.roles.ranks.silver: return config.roles.ranks.onMessages.silver;
+            case config.roles.ranks.bronze: return config.roles.ranks.onMessages.bronze;
+            case config.roles.ranks.iron: return config.roles.ranks.onMessages.iron;
+        }
+        return undefined;
+}
 
+async function removeRankedRoles(member: GuildMember, role: Role) {
+    await member.roles.remove(role.id);
     switch (role.id) {
-
-        case config.roles.purdue:
-            if (student && student.status) {
-                response.content = "You are verified!";
-                await addRole(config.roles.purdue, guildMember);
-                // await removeRole(config.roles.other, guildMember);
-            } else {
-                let modal = new Modal().setCustomId("verify-start").setTitle("Purdue Verification");
-                let emailInput = new TextInputComponent().setCustomId("email").setLabel("What is your Purdue email address?").setStyle("SHORT");
-                let row = new MessageActionRow().addComponents(emailInput);
-                // @ts-ignore
-                modal.addComponents(row);
-                await interaction.showModal(modal);
-            }
-            break;
-
-            /*
-        case config.roles.other:
-            if (hasRole) {
-                response.content = "You have removed the role **Other** from yourself.";
-                await removeRole(config.roles.other, guildMember);
-            } else {
-                if (student) {
-                    response.content = "Purdue students cannot apply the Non-Purdue role.";
-                } else {
-                    response.content = "You have applied the role **Other** to yourself.";
-                    await addRole(config.roles.other, guildMember);
-                }
-            }
-            break;
-             */
-
-        case config.roles["10mans"]:
-            const command = bot.commands.get("register");
-            response = await command.execute(interaction);
-            break;
-
-        case config.roles.ranks.immortal:
-            if (hasRole) {
-                await removeRole(role.id, guildMember);
-                response.content = "I didn't believe you either\nYou removed the role **Immortal** from yourself";
-            } else {
-                await addRole(role.id, guildMember);
-                response.content = "Haha, sure buddy.\nYou have applied the role **Immortal** to yourself";
-            }
-            break;
-
-        case config.roles.ranks.ascendant:
-            if (hasRole) {
-                await removeRole(role.id, guildMember);
-                response.content = "Nothing lasts forever!\nYou removed the role **Ascendant** from yourself";
-            } else {
-                await addRole(role.id, guildMember);
-                response.content = "Are you sure about that?\n You have applied the role **Ascendant** to yourself";
-            }
-            break;
-
-        case config.roles.ranks.diamond:
-            if (hasRole) {
-                await removeRole(role.id, guildMember);
-                response.content = "Ending on a loss are we?\nYou removed the role **Diamond** from yourself";
-            } else {
-                await addRole(role.id, guildMember);
-                response.content = "I can't be the only one surprised, right?\nYou have applied the role **Diamond** to yourself";
-            }
-            break;
-
-        case config.roles.ranks.platinum:
-            if (hasRole) {
-                await removeRole(role.id, guildMember);
-                response.content = "Back to the trenches.\nYou removed the role **Platinum** from yourself";
-            } else {
-                await addRole(role.id, guildMember);
-                response.content = "I knew you could do it!\nYou have applied the role **Platinum** to yourself";
-            }
-            break;
-
-        case config.roles.ranks.gold:
-            if (hasRole) {
-                await removeRole(role.id, guildMember);
-                response.content = "Ranking up I hope?\nYou removed the role **Gold** from yourself";
-            } else {
-                response.content = "This makes sense!\nYou applied the role **Gold** to yourself.";
-                await addRole(role.id, guildMember);
-            }
-            break;
-
-        case config.roles.ranks.silver:
-            if (hasRole) {
-                await removeRole(role.id, guildMember);
-                response.content = "Don't take anything for granted.\nYou removed the role **Silver** from yourself";
-            } else {
-                response.content = "Not having much fun are we?\nYou applied the role **Silver** to yourself.";
-                await addRole(role.id, guildMember);
-            }
-            break;
-
-        case config.roles.ranks.bronze:
-            if (hasRole) {
-                response.content = "Good or bad luck? You tell me.\nYou removed the role **Bronze** from yourself";
-                await removeRole(role.id, guildMember);
-            } else {
-                response.content = "Maybe something isn't working...\nYou applied the role **Bronze** to yourself.";
-                await addRole(role.id, guildMember);
-            }
-            break;
-
-        case config.roles.ranks.iron:
-            if (hasRole) {
-                response.content = "Hope is on the horizon! (not)\nYou removed the role **Iron** from yourself";
-                await removeRole(role.id, guildMember);
-            } else {
-                response.content = "Achievement Got! How did we get here? But seriously.. how are you this lost?" +
-                    "\nYou applied the role **Iron** to yourself.";
-                await addRole(role.id, guildMember);
-            }
-            break;
-
-        case config.roles.valorant:
-            if (hasRole) {
-                response.content = "You already have access!";
-            } else {
-                await addRole(role.id, guildMember);
-                response.content = "Welcome to the Club!";
-            }
-            break;
-
-        default:
-            if (!hasRole) {
-                await addRole(role.id, guildMember);
-                response.content = `You applied the role **${role.name}** to yourself.`;
-            } else {
-                await removeRole(role.id, guildMember);
-                response.content = `You have removed the role **${role.name}** from yourself.`;
-            }
-            break;
+        case config.roles.ranks.radiant: return config.roles.ranks.offMessages.radiant;
+        case config.roles.ranks.immortal: return config.roles.ranks.offMessages.immortal;
+        case config.roles.ranks.ascendant: return config.roles.ranks.offMessages.ascendant;
+        case config.roles.ranks.diamond: return config.roles.ranks.offMessages.diamond;
+        case config.roles.ranks.platinum: return config.roles.ranks.offMessages.platinum;
+        case config.roles.ranks.gold: return config.roles.ranks.offMessages.gold;
+        case config.roles.ranks.silver: return config.roles.ranks.offMessages.silver;
+        case config.roles.ranks.bronze: return config.roles.ranks.offMessages.bronze;
+        case config.roles.ranks.iron: return config.roles.ranks.offMessages.iron;
     }
-
-    return response;
-}
-
-/**
- * Adds a Role to a GuildMember
- * @param id
- * @param guildMember
- */
-async function addRole(id: string, guildMember: GuildMember) {
-    await guildMember.roles.add(id);
-}
-
-/**
- * Removes a Role from a GuildMember
- * @param id
- * @param guildMember
- */
-async function removeRole(id: string, guildMember: GuildMember) {
-    await guildMember.roles.remove(id);
-}
-
-/**
- * Determines whether a GuildMember has a certain Role
- * @param snowflake
- * @param guildMember
- */
-async function checkIfMemberHasRole(snowflake: string, guildMember: GuildMember): Promise<boolean> {
-    let result = false;
-    let roles = guildMember.roles.cache;
-
-    roles.forEach(role => {
-        if (role.id === snowflake) result = true;
-    })
-    return result;
+    return undefined;
 }
 
 /**

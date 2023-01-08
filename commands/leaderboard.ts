@@ -1,7 +1,7 @@
 import {SlashCommandBuilder} from "@discordjs/builders";
-import {CommandInteraction, InteractionReplyOptions} from "discord.js";
-import {updateRankings} from "../database/database.service";
+import {ChatInputCommandInteraction} from "discord.js";
 import LeaderboardImage from "../objects/images/Leaderboard.Image";
+import {bot} from "../index";
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -13,12 +13,13 @@ module.exports = {
             .setRequired(false)
         ),
 
-    async execute(interaction: CommandInteraction): Promise<InteractionReplyOptions> {
-        await updateRankings();
-        const response = {content: `<@${interaction.user.id}>`, files: null, ephemeral: false};
-        const page = interaction.options.getInteger('page') ?? 1;
-        response.files = [await LeaderboardImage.build(page)];
+    async execute(interaction: ChatInputCommandInteraction): Promise<void> {
+        await interaction.deferReply();
+        await bot.database.updateRankings();
 
-        return response;
+        const page = interaction.options.getInteger('page') ?? 1;
+        const file = await LeaderboardImage.build(page)
+
+        await interaction.editReply({files: [file]});
     },
 }

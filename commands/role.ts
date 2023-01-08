@@ -1,5 +1,5 @@
 import {SlashCommandBuilder} from "@discordjs/builders";
-import {CommandInteraction} from "discord.js";
+import {ChatInputCommandInteraction} from "discord.js";
 import {bot} from "../index";
 
 module.exports = {
@@ -39,29 +39,21 @@ module.exports = {
             )
         ),
 
-    async execute(interaction: CommandInteraction) {
-        let response;
-        let subcommand = interaction.options.getSubcommand();
-        let role = interaction.options.getRole("role");
-        let member = await bot.guild.members.fetch(interaction.options.getUser("target"));
+    async execute(interaction: ChatInputCommandInteraction): Promise<void> {
+        const subcommand = interaction.options.getSubcommand();
+        const role = interaction.options.getRole("role");
+        const member = await bot.guild.members.fetch(interaction.options.getUser("target"));
+
         try {
-            switch(subcommand) {
-                case "add":
-                    await member.roles.add(role.id);
-                    response = {content: `<@&${role.id}> given to <@!${member.id}>`, ephemeral: true};
-                    break;
-                case "remove":
-                    await member.roles.remove(role.id);
-                    response = {content: `<@&${role.id}> taken from <@!${member.id}>`, ephemeral: true};
-                    break;
-                default:
-                    response = {content: "Something went very wrong... Please send this to <@!751910711218667562>."};
-                    await bot.logger.fatal("Manage Command Failed", new Error("Inaccessible option"));
+            if (subcommand == "add") {
+                await member.roles.add(role.id);
+                await interaction.reply({content: `<@&${role.id}> given to <@!${member.id}>`, ephemeral: true});
+            } else {
+                await member.roles.remove(role.id);
+                await interaction.reply({content: `<@&${role.id}> taken from <@!${member.id}>`, ephemeral: true});
             }
-        } catch(error) {
-            await bot.logger.error("Could not execute /role command", error);
-            response = {content: `This role can't be applied to <@!${member.id}>.`, ephemeral: true};
+        } catch (error) {
+            await interaction.reply({content: "Sorry, that didn't work.", ephemeral: true});
         }
-        return response;
     }
 }

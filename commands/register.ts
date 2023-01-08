@@ -1,9 +1,14 @@
-import {ButtonInteraction, CommandInteraction, GuildMember, GuildMemberRoleManager} from "discord.js";
+import {
+    ButtonInteraction,
+    ChatInputCommandInteraction,
+    GuildMember,
+    GuildMemberRoleManager
+} from "discord.js";
 import {SlashCommandBuilder} from "@discordjs/builders";
 import * as blacklist from "../blacklist.json";
 import * as config from "../config.json";
 import Player from "../objects/Player";
-import {updateRankings} from "../database/database.service";
+import {bot} from "../index";
 
 const censoredWords = blacklist.list.split(" ");
 
@@ -17,27 +22,26 @@ module.exports = {
             .setRequired(false)
         ),
 
-    async execute(interaction: CommandInteraction | ButtonInteraction) {
-        let response;
-        let username;
-        let player = await Player.get(interaction.user.id);
-
+    async execute(interaction: ChatInputCommandInteraction | ButtonInteraction): Promise<void> {
+        const player = await Player.get(interaction.user.id);
         if (player) {
             await (interaction.member as GuildMember).roles.add(config.roles.tenmans);
-            response = {content: "You are already registered", ephemeral: true};
-        } else {
-            if (interaction instanceof CommandInteraction) username = interaction.options.getString("username");
-            username ??= interaction.user.username;
-            if (isValidUsername(username)) {
-                if (username.length < 17 && username.length > 2) {
-                    await Player.post(new Player(interaction.user.id, username));
-                    await (interaction.member.roles as GuildMemberRoleManager).add(config.roles.tenmans);
-                    response = {content: `You have been registered as \`${username}\``, ephemeral: true};
-                    await updateRankings();
-                } else response = {content: `Your username must be 3-16 characters long.`, ephemeral: true};
-            } else response = {content: `The username, \`${username}\`, is invalid. Try using /register with a different username.`, ephemeral: true};
+            await interaction.reply({content: "You are already registered", ephemeral: true});
+            return;
         }
-        return response;
+        const username = (interaction instanceof ChatInputCommandInteraction) ? interaction.options.getString("username") : interaction.user.username;
+        if (!isValidUsername(username)) {
+            await interaction.reply({content: `The username, \`${username}\`, is invalid. Try using /register with a different username.`});
+            return;
+        }
+        if (username.length > 18 || username.length < 2) {
+            await interaction.reply({content: `Your username must be 3-16 characters long.`, ephemeral: true});
+            return;
+        }
+        await Player.post(new Player(interaction.user.id, username));
+        await (interaction.member.roles as GuildMemberRoleManager).add(config.roles.tenmans);
+        await bot.database.updateRankings();
+        await interaction.reply({content: `You have been registered as \`${username}\``, ephemeral: true});
     }
 }
 

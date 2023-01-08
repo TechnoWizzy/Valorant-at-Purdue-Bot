@@ -1,0 +1,9 @@
+
+*.js
+*.map
+*.json
+node_modules/*
+.idea/*
+media/background.png
+media/dark_gray.png
+media/gray.png

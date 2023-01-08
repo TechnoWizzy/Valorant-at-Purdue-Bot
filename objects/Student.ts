@@ -1,4 +1,4 @@
-import {collections} from "../database/database.service";
+import {bot} from "../index";
 
 export default class Student {
     private _id: string;
@@ -67,7 +67,7 @@ export default class Student {
     static async get(id: string) {
         try {
             const query = { _id: id };
-            const student = Student.fromObject(await collections.students.findOne(query));
+            const student = Student.fromObject(await bot.database.students.findOne(query));
 
             if (student) {
                 return student;
@@ -80,8 +80,7 @@ export default class Student {
     static async post(student: Student) {
         try {
             const Student = (student);
-            // @ts-ignore
-            return await collections.students.insertOne(Student);
+            return bot.database.students.insertOne(Student as unknown);
 
         } catch (error) {
             console.error(error);
@@ -90,10 +89,10 @@ export default class Student {
     }
 
     static async put(student: Student) {
-        await collections.students.updateOne({ _id: (student.id) }, { $set: student });
+        await bot.database.students.updateOne({ _id: (student.id) }, { $set: student });
     }
 
     static async delete(student: Student) {
-        await collections.students.deleteOne({ _id: (student.id) });
+        await bot.database.students.deleteOne({ _id: (student.id) });
     }
 }

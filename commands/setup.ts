@@ -1,11 +1,12 @@
 import {
-    CommandInteraction,
-    MessageActionRow,
-    MessageButton,
-    MessageEmbed,
-    MessageSelectMenu
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ChatInputCommandInteraction,
+    EmbedBuilder,
+    MessageReplyOptions,
 } from "discord.js"
-import { SlashCommandBuilder } from "@discordjs/builders"
+import {SlashCommandBuilder} from "@discordjs/builders"
 import * as config from "../config.json";
 import {bot} from "../index";
 
@@ -25,88 +26,87 @@ module.exports = {
             )
         ),
 
-    async execute(interaction: CommandInteraction) {
+    async execute(interaction: ChatInputCommandInteraction): Promise<void> {
         let menu_name = interaction.options.getString("menu_name");
         switch(menu_name) {
-            case "verification_menu": return buildVerificationMenu();
-            case "ranks_menu": return await buildRanksMenu();
-            case "roles_menu": return await buildRolesMenu();
-            case "welcome_menu": return buildWelcomeMenu();
-            default: return ({content: "Sorry, the specified menu does not exist", ephemeral: true});
+            case "verification_menu": await interaction.channel.send(buildVerificationMenu()); break;
+            case "ranks_menu": await interaction.channel.send(buildRanksMenu()); break;
+            case "roles_menu": await interaction.channel.send(buildRolesMenu()); break;
+            case "welcome_menu": await interaction.channel.send(buildWelcomeMenu()); break;
         }
+        await interaction.reply({content: "Success", ephemeral: true});
     }
 }
 
-async function buildVerificationMenu() {
-    let embed = new MessageEmbed()
-        .setTitle("Purdue Verification Menu")
-        .setColor("#f1c40f")
-        .setDescription("Indicate your affiliation with Purdue. The Purdue role requires email verification.\n\n" +
+function buildVerificationMenu(): MessageReplyOptions {
+    let embed = new EmbedBuilder()
+        .setTitle("Student Email Verification")
+        .setColor("#2f3136")
+        .setDescription(
             "**How to authenticate yourself as a Purdue Student!**\n" +
-            "1. Click the **Purdue Button** to have a unique link sent to your email.\n" +
-            "2. Click the **Purdue Button** once you have verified your email address.\n");
+            "1. Click the **Purdue Button** to have a verification email sent to you.\n" +
+            "2. Click the link within the verification email.\n"
+        );
 
-    let row = new MessageActionRow()
+    let row = new ActionRowBuilder<ButtonBuilder>()
         .addComponents(
-            new MessageButton()
+            new ButtonBuilder()
                 .setCustomId(config.roles.purdue)
                 .setLabel("Purdue")
-                .setStyle("SECONDARY")
+                .setStyle(ButtonStyle.Secondary)
                 .setEmoji(config.emotes.purdue),
         );
     return ({embeds: [embed], components: [row]});
 }
 
-async function buildRanksMenu() {
-    let embed = new MessageEmbed()
+function buildRanksMenu(): MessageReplyOptions {
+    let embed = new EmbedBuilder()
         .setTitle("Valorant Ranked Roles")
-        .setColor("#f1c40f")
+        .setColor("#2f3136")
         .setDescription("");
 
-    let iron = new MessageButton().setCustomId(config.roles.ranks.iron).setStyle("SECONDARY").setEmoji(config.emotes.ranks.iron);
-    let bronze = new MessageButton().setCustomId(config.roles.ranks.bronze).setStyle("SECONDARY").setEmoji(config.emotes.ranks.bronze);
-    let silver = new MessageButton().setCustomId(config.roles.ranks.silver).setStyle("SECONDARY").setEmoji(config.emotes.ranks.silver);
-    let gold = new MessageButton().setCustomId(config.roles.ranks.gold).setStyle("SECONDARY").setEmoji(config.emotes.ranks.gold);
-    let platinum = new MessageButton().setCustomId(config.roles.ranks.platinum).setStyle("SECONDARY").setEmoji(config.emotes.ranks.platinum);
-    let diamond = new MessageButton().setCustomId(config.roles.ranks.diamond).setStyle("SECONDARY").setEmoji(config.emotes.ranks.diamond);
-    let ascendant = new MessageButton().setCustomId(config.roles.ranks.ascendant).setStyle("SECONDARY").setEmoji(config.emotes.ranks.ascendant);
-    let immortal = new MessageButton().setCustomId(config.roles.ranks.immortal).setStyle("SECONDARY").setEmoji(config.emotes.ranks.immortal);
-    let radiant = new MessageButton().setCustomId(config.roles.ranks.radiant).setStyle("SECONDARY").setEmoji(config.emotes.ranks.radiant);
+    let iron = new ButtonBuilder().setCustomId(config.roles.ranks.iron).setStyle(ButtonStyle.Secondary).setEmoji(config.emotes.ranks.iron);
+    let bronze = new ButtonBuilder().setCustomId(config.roles.ranks.bronze).setStyle(ButtonStyle.Secondary).setEmoji(config.emotes.ranks.bronze);
+    let silver = new ButtonBuilder().setCustomId(config.roles.ranks.silver).setStyle(ButtonStyle.Secondary).setEmoji(config.emotes.ranks.silver);
+    let gold = new ButtonBuilder().setCustomId(config.roles.ranks.gold).setStyle(ButtonStyle.Secondary).setEmoji(config.emotes.ranks.gold);
+    let platinum = new ButtonBuilder().setCustomId(config.roles.ranks.platinum).setStyle(ButtonStyle.Secondary).setEmoji(config.emotes.ranks.platinum);
+    let diamond = new ButtonBuilder().setCustomId(config.roles.ranks.diamond).setStyle(ButtonStyle.Secondary).setEmoji(config.emotes.ranks.diamond);
+    let ascendant = new ButtonBuilder().setCustomId(config.roles.ranks.ascendant).setStyle(ButtonStyle.Secondary).setEmoji(config.emotes.ranks.ascendant);
+    let immortal = new ButtonBuilder().setCustomId(config.roles.ranks.immortal).setStyle(ButtonStyle.Secondary).setEmoji(config.emotes.ranks.immortal);
+    let radiant = new ButtonBuilder().setCustomId(config.roles.ranks.radiant).setStyle(ButtonStyle.Secondary).setEmoji(config.emotes.ranks.radiant);
 
-    let row = new MessageActionRow().addComponents(iron, bronze, silver);
-    let row2 = new MessageActionRow().addComponents(gold, platinum, diamond);
-    let row3 = new MessageActionRow().addComponents(ascendant, immortal, radiant);
+    let row = new ActionRowBuilder<ButtonBuilder>().addComponents(iron, bronze, silver);
+    let row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(gold, platinum, diamond);
+    let row3 = new ActionRowBuilder<ButtonBuilder>().addComponents(ascendant, immortal, radiant);
 
     return ({embeds: [embed], components: [row, row2, row3]});
 }
 
-async function buildRolesMenu() {
-    let embed = new MessageEmbed()
+function buildRolesMenu(): MessageReplyOptions {
+    let embed = new EmbedBuilder()
         .setTitle("Miscellaneous Roles")
-        .setColor("#f1c40f")
+        .setColor("#2f3136")
         .setDescription("" +
             "• **Purdue** - React if you are an alumnus, student, or incoming freshman.\n" +
             "• **PUGS** - React if you are interested in PUGs (pick up games).\n" +
             "• **10mans** - React to receive access 10mans channels and notifications.");
 
-    let purdue = new MessageButton().setLabel("Purdue").setCustomId(config.roles.purdue).setStyle("SECONDARY").setEmoji(config.emotes.purdue);
-    let pugs = new MessageButton().setLabel("PUGs").setCustomId(config.roles.pugs).setStyle("SECONDARY").setEmoji(config.emotes.pugs);
-    let tenmans = new MessageButton().setLabel("10mans").setCustomId(config.roles.tenmans).setStyle("SECONDARY").setEmoji(config.emotes.tenmans);
+    let purdue = new ButtonBuilder().setLabel("Purdue").setCustomId(config.roles.purdue).setStyle(ButtonStyle.Secondary).setEmoji(config.emotes.purdue);
+    let pugs = new ButtonBuilder().setLabel("PUGs").setCustomId(config.roles.pugs).setStyle(ButtonStyle.Secondary).setEmoji(config.emotes.pugs);
+    let tenmans = new ButtonBuilder().setLabel("10mans").setCustomId(config.roles.tenmans).setStyle(ButtonStyle.Secondary).setEmoji(config.emotes.tenmans);
 
-    let row = new MessageActionRow().addComponents(purdue, pugs, tenmans);
+    let row = new ActionRowBuilder<ButtonBuilder>().addComponents(purdue, pugs, tenmans);
 
     return ({embeds: [embed], components: [row]});
 }
 
-async function buildWelcomeMenu() {
-    let row
-
-    row = new MessageActionRow()
+function buildWelcomeMenu(): MessageReplyOptions {
+    let row = new ActionRowBuilder<ButtonBuilder>()
         .addComponents(
-            new MessageButton()
+            new ButtonBuilder()
                 .setCustomId(config.roles.valorant)
                 .setLabel(`Access ${bot.guild.name}!`)
-                .setStyle("SUCCESS")
+                .setStyle(ButtonStyle.Success)
                 .setEmoji(config.emotes.logo)
         )
     return ({components: [row]});

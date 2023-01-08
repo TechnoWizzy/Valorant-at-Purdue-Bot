@@ -1,13 +1,10 @@
 import Game from "../Game";
-import {MessageAttachment} from "discord.js";
 import * as Canvas from "canvas";
-import Team from "../Team";
-import Player from "../Player";
-import {bot} from "../../index";
 import ImageUtils from "./ImageUtils";
+import {AttachmentBuilder} from "discord.js";
 
 export default class GameImage {
-    public static async build(game: Game): Promise<MessageAttachment> {
+    public static async build(game: Game): Promise<AttachmentBuilder> {
         let font = "px sans-serif";
         const canvas = Canvas.createCanvas(500, 554);
         const ctx = canvas.getContext('2d');
@@ -17,15 +14,16 @@ export default class GameImage {
         const logo = await Canvas.loadImage("./media/logo.png");
         const map = await Canvas.loadImage(`./media/maps/${game.map.replace(/ /g,"_").toLowerCase()}.jpg`);
 
-        ImageUtils.printImage(ctx, background, 0, 0, canvas.width, canvas.height, 10);
-        ImageUtils.printImage(ctx, gray, 10, 75, canvas.width - 20, canvas.height - 85, 10);
-        ImageUtils.printImage(ctx, panel, 13, 78, canvas.width - 26, canvas.height - 360, 10);
-        ImageUtils.printImage(ctx, logo, 15, 10, 50, 54, 0);
-        ImageUtils.printImage(ctx, logo, canvas.width - 70, 8, 60, 60, 0);
-        ImageUtils.printImage(ctx, map, 13, 275, 474, 266, 10);
+        ImageUtils.printImage(ctx, background, 0, 0, canvas.width, canvas.height);
+        ImageUtils.printImage(ctx, gray, 10, 75, canvas.width - 20, canvas.height - 85);
+        ImageUtils.printImage(ctx, panel, 13, 78, canvas.width - 26, canvas.height - 360);
+        ImageUtils.printImage(ctx, logo, 15, 10, 50, 54);
+        ImageUtils.printImage(ctx, logo, canvas.width - 70, 8, 60, 60);
+        ImageUtils.printImage(ctx, map, 13, 275, 474, 266);
         ImageUtils.printText(ctx, `Game ${game.id}`, canvas.width / 2, 40, "#ffffff", `32${font}`, "center");
         ImageUtils.printText(ctx, `Purdue University Pro League`, canvas.width / 2, 64, "#ffffff", `20${font}`, "center");
 
+        /*
         if (game.phase == 0) {
             if (game.winner && game.loser) {
                 let winner = Team.fromObject(game.winner);
@@ -56,6 +54,8 @@ export default class GameImage {
 
         }
 
-        return (new MessageAttachment(canvas.toBuffer(), `game-${game.id}.png`));
+         */
+
+        return new AttachmentBuilder(canvas.toBuffer(), {name:`game-${game.id}.png`});
     }
 }

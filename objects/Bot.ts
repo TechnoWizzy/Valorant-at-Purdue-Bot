@@ -1,12 +1,11 @@
 import {
+    ActivityType,
     Client,
     ClientOptions,
     Collection,
-    Guild,
-    Intents,
+    Guild, IntentsBitField,
     TextChannel
 } from "discord.js";
-import {connectToDatabase} from "../database/database.service";
 import {Routes} from "discord-api-types/v9";
 import * as config from "../config.json";
 import {REST} from "@discordjs/rest";
@@ -14,13 +13,14 @@ import Queue from "./Queue";
 import * as fs from "fs";
 import Logger from "./Logger";
 import {SlashCommandBuilder} from "@discordjs/builders";
+import Database from "./Database";
+import {bot} from "../index";
 
 const options = {
     intents: [
-        Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MEMBERS,
-        Intents.FLAGS.GUILD_BANS, Intents.FLAGS.GUILD_MESSAGES,
-        Intents.FLAGS.GUILD_MESSAGE_REACTIONS, Intents.FLAGS.DIRECT_MESSAGES,
-        Intents.FLAGS.DIRECT_MESSAGE_REACTIONS, Intents.FLAGS.GUILD_PRESENCES
+        IntentsBitField.Flags.Guilds, IntentsBitField.Flags.GuildMembers,
+        IntentsBitField.Flags.GuildBans, IntentsBitField.Flags.GuildMessages,
+        IntentsBitField.Flags.DirectMessages, IntentsBitField.Flags.GuildPresences
     ]
 } as ClientOptions;
 
@@ -28,9 +28,8 @@ export default class Bot extends Client{
     private _guild: Guild;
     private _queue: Queue;
     private _logger: Logger;
+    private _database: Database;
     private _commands: Collection<any, any>;
-    private _lobbyChannel: TextChannel;
-    private _logChannel: TextChannel;
 
     constructor() {
         super(options);
@@ -61,6 +60,14 @@ export default class Bot extends Client{
         this._logger = value;
     }
 
+    get database() {
+        return this._database;
+    }
+
+    set database(value: Database) {
+        this._database = value;
+    }
+
     get commands() {
         return this._commands;
     }
@@ -68,35 +75,28 @@ export default class Bot extends Client{
     set commands(value) {
         this._commands = value;
     }
-
-    get lobbyChannel(): TextChannel {
-        return this._lobbyChannel;
-    }
-
     async init() {
-        this._guild = await this.guilds.fetch(config.guild);
-        this._logChannel = await this._guild.channels.fetch(config.channels.log) as TextChannel;
-        this._lobbyChannel = await this._guild.channels.fetch(config.channels["10mans"]) as TextChannel;
-        this._logger = new Logger(this._logChannel);
-        await connectToDatabase()
-        await this.initializeQueue();
+        this.guild = await this.guilds.fetch(config.guild);
+        this.logger = new Logger(await this._guild.channels.fetch(config.channels.log) as TextChannel);
+        this.queue = new Queue(await this._guild.channels.fetch(config.channels["10mans"]) as TextChannel);
+        this.database = new Database();
+
+        switch (config.status.type) {
+            case "PLAYING": bot.user.setActivity({name: config.status.name, type: ActivityType.Playing}); break;
+            case "STREAMING": bot.user.setActivity({name: config.status.name, type: ActivityType.Streaming}); break;
+            case "LISTENING": bot.user.setActivity({name: config.status.name, type: ActivityType.Listening}); break;
+            case "WATCHING": bot.user.setActivity({name: config.status.name, type: ActivityType.Watching}); break;
+            case "COMPETING": bot.user.setActivity({name: config.status.name, type: ActivityType.Competing}); break;
+        }
+
+        await this.queue.init();
+        await this.database.init();
         await this.initializeCommands(config.token);
     }
 
-    async initializeQueue() {
-        this._queue = new Queue(this._lobbyChannel);
-        await this.queue.update("A new queue has started", 3);
-        for (const [,message] of (await this.lobbyChannel.messages.fetch({limit: 6}))) {
-            if (message.author.id == this.user.id) {
-                if (message.embeds.some(embed => embed.title == "A new queue has started")) {
-                    await message.delete();
-                }
-            }
-        }
-    }
-
     async initializeCommands(token: string) {
-        const commands = [];
+        const guildCommands = [];
+        const globalCommands = [];
         const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
         const rest = new REST({ version: '9' }).setToken(token);
         const id = this.application.id;
@@ -104,16 +104,16 @@ export default class Bot extends Client{
 
         for (const file of commandFiles) {
             const command = require(`../commands/${file}`);
-            if (command.data) {
-                commands.push(command.data.toJSON());
-                await this.commands.set(command.data.name, command);
+            if (!command.disabled) {
+                if (command.global) globalCommands.push(command.data.toJSON());
+                else guildCommands.push(command.data.toJSON());
+                await this._commands.set(command.data.name, command);
             }
         }
-        this.commands.set(ping.name, ping);
 
         try {
-            await rest.put(Routes.applicationGuildCommands(id, guild.id), {body: commands});
-            await rest.put(Routes.applicationCommands(id), {body: [ping.toJSON()]})
+            await rest.put(Routes.applicationGuildCommands(id, guild.id), {body: guildCommands});
+            await rest.put(Routes.applicationCommands(id), {body: globalCommands});
             await this.logger.info("Application commands uploaded");
         } catch (error) {
             await this.logger.error("Error uploading application commands", error);

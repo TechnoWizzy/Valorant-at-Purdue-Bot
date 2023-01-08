@@ -1,17 +1,17 @@
 import {SlashCommandBuilder} from "@discordjs/builders";
-import {CommandInteraction, InteractionReplyOptions} from "discord.js";
-import Game from "../objects/Game";
+import {ChatInputCommandInteraction} from "discord.js";
 import Player from "../objects/Player";
 import {bot} from "../index";
 import Queue from "../objects/Queue";
 import * as blacklist from "../blacklist.json";
-import {updateRankings} from "../database/database.service";
+import Game, {GameResult} from "../objects/Game";
+
+const censoredWords = blacklist.list.split(" ");
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName("manage")
         .setDescription("General-purpose management command")
-        .setDefaultPermission(false)
 
         // game
         .addSubcommandGroup((group) => group
@@ -51,8 +51,8 @@ module.exports = {
                     .setDescription("The winner of this game")
                     .setRequired(true)
                     .setChoices(
-                        {name: "Team 1", value: 0},
-                        {name: "Team 2", value: 1}
+                        {name: "Team 1", value: 1},
+                        {name: "Team 2", value: 2}
                     )
                 )
             )
@@ -221,143 +221,203 @@ module.exports = {
         )
     ,
 
-    async execute(interaction: CommandInteraction): Promise<InteractionReplyOptions> {
-        let subcommandGroup = interaction.options.getSubcommandGroup()
-        let subcommand = interaction.options.getSubcommand();
-        let response = {content: null, ephemeral: true};
-        let player;
-        let user;
+    async execute(interaction: ChatInputCommandInteraction): Promise<void> {
+        const group = interaction.options.getSubcommandGroup()
+        const subcommand = interaction.options.getSubcommand();
 
-        switch (subcommandGroup) {
-            case "game":
-                let game = await Game.get(interaction.options.getInteger("id").toString());
-                if (game) {
-                    switch (subcommand) {
-                        case "sub":
-                            let sub = await Player.get(interaction.options.getUser('sub').id);
-                            let target = await Player.get(interaction.options.getUser('target').id);
-                            if (sub) {
-                                if (target) {
-                                    if (await game.sub(sub, target)) {
-                                        response.content = `<@!${sub.id}> has been subbed in for <@!${target.id}>`;
-                                    } else response.content = "This substitution could not be completed.";
-                                } else response.content = "The target is not a valid player.";
-                            } else response.content = "The sub is not a valid player.";
-                            break;
-                        case "set-winner":
-                            let code = interaction.options.getInteger("winner");
-                            await game.end(code);
-                            response.content = `Game ${game.id} result has been set. Team ${code + 1} won!`;
-                            break;
-                        case "set-draw":
-                            await game.end(2);
-                            response.content = `Game ${game.id} result has been set. It's a draw!`;
-                            break;
-                        case "set-map":
-                            let map = interaction.options.getString("map");
-                            game.map = map;
-                            await game.save();
-                            response.content = `Game ${game.id} has been moved to ${map}.`;
-                            break;
-                    }
-                } else response.content = "This game does not exist.";
-                break;
-            case "queue":
-                switch (subcommand) {
-                    case "add":
-                        player = await Player.get(interaction.options.getUser("target").id);
-                        if (player) {
-                            if (!bot.queue.has(player.id)) {
-                                await bot.queue.join(player);
-                                response.content = `${player.username} has been added`;
-                            } else response.content = `${player.username} is already in queue.`;
-                        } else response.content = "This player is not registered.";
-                        break;
-                    case "kick":
-                        player = await Player.get(interaction.options.getUser("target").id);
-                        if (player) {
-                            if (bot.queue.has(player.id)) {
-                                bot.queue.delete(player.id);
-                                await bot.queue.update(`${player.username} has been removed`, 2);
-                                response.content = `${player.username} has been kicked from the queue.`;
-                            } else response.content = `${player.username} is not in the queue.`;
-                        } else response.content = "This player is not registered.";
-                        break;
-                    case "reset":
-                        bot.queue = new Queue(bot.lobbyChannel);
-                        await bot.queue.update("The queue has been reset.", 2);
-                        response.content = "The queue has been reset.";
-                        break;
+        try {
+
+            if (group == "game") {
+
+                const game = await Game.get(interaction.options.getInteger("id").toString());
+
+                if (!game) {
+                    await interaction.reply({content: "This game could not be found.", ephemeral: true});
+                    return;
                 }
-                break;
-            case "player":
-                user = await interaction.options.getUser("target")
-                player = await Player.get(user.id);
-                if (player) {
-                    switch (subcommand) {
-                        case "set-username":
-                            let oldUsername = player.username;
-                            let username = interaction.options.getString("username");
-                            player.username = username;
-                            await player.save();
-                            if (isValidUsername(username)) response.content = `${oldUsername} is now ${username}.`;
-                            else response.content = `${oldUsername} is now ${username}. Warning, this username is against the rules. Please address this.`;
-                            break;
-                        case "register":
-                            response.content = "This player is already registered";
-                            break;
-                        case "set-stats":
-                            player.points = interaction.options.getInteger("points") ?? player.points;
-                            player.wins = interaction.options.getInteger("wins") ?? player.wins;
-                            player.losses = interaction.options.getInteger("losses") ?? player.losses;
-                            player.draws = interaction.options.getInteger("draws") ?? player.draws;
-                            await player.save();
-                            await updateRankings();
-                            response.content = `${player.username} has been updated.`;
-                            break;
-                        case "ban":
-                            let magnitude = interaction.options.getInteger("length");
-                            let unit = interaction.options.getString("unit");
-                            let time = Math.round(Date.now() / 1000);
-                            switch (unit) {
-                                case "minutes": time += magnitude * 60; break;
-                                case "hours": time += magnitude * 3600; break;
-                                case "days": time += magnitude * 86400; break;
-                                case "weeks": time += magnitude * 604800; break;
-                                case "months": time += magnitude * 2629800; break;
-                                case "years": time += magnitude * 31556952; break;
-                            }
-                            player.banTime = time;
-                            await player.save();
-                            if (bot.queue.has(player.id)) {
-                                bot.queue.delete(player.id);
-                                await bot.queue.update(`${player.username} has been kicked from the queue`, 2);
-                            }
-                            response.content = `**${player.username}** has been banned from the PUPL until <t:${time}:F>`;
-                            break;
-                        case "unban":
-                            player.banTime = 0;
-                            await player.save();
-                            response.content = `**${player.username}** has been unbanned from the PUPL`;
-                            break;
+
+                if (subcommand == "sub") {
+
+                    const sub = await Player.get(interaction.options.getUser('sub').id);
+                    const target = await Player.get(interaction.options.getUser('target').id);
+                    if (!sub) {
+                        await interaction.reply({content: "The sub is not a valid player.", ephemeral: true});
+                        return;
                     }
-                } else {
-                    if (subcommand == "register") {
-                        let username = interaction.options.getString("username") ?? interaction.options.getUser("target").username;
-                        player = Player.post(new Player(user.id, username));
-                        response.content = `<@!${user.id}> has been registered as ${username}.`;
-                    } else response.content = "This player is not registered.";
+                    if (!target) {
+                        await interaction.reply({content: "The target is not a valid player.", ephemeral: true});
+                        return;
+                    }
+                    if (!(await game.sub(sub, target))) {
+                        await interaction.reply({content: "This substitution could not be completed.", ephemeral: true});
+                        return;
+                    }
+                    await interaction.reply({content: `<@!${sub.id}> has been subbed in for <@!${target.id}> in Game ${game.id}`});
+
+                } else if (subcommand == "set-winner") {
+
+                    const code = interaction.options.getInteger("winner");
+                    await game.end(code as GameResult);
+                    await interaction.reply({content: `Game ${game.id} result has been set. Team ${code} won!`});
+
+                } else if (subcommand == "set-draw") {
+
+                    await game.end(GameResult.Draw);
+                    await interaction.reply({content: `Game ${game.id} result has been set. It's a draw!`});
+
+                } else if (subcommand == "set-map") {
+
+                    const map = interaction.options.getString("map");
+                    game.map = map;
+                    await game.save();
+                    await interaction.reply({content: `Game ${game.id} has been moved to ${map}.`});
+
                 }
-                break;
-            default:
-                response.content = "Something went very wrong... Please send this to <@!751910711218667562>.";
-                await bot.logger.fatal("Manage Command Failed", new Error("Inaccessible option"));
+
+            } else if (group == "queue") {
+
+                if (subcommand == "add") {
+
+                    const player = await Player.get(interaction.options.getUser("target").id);
+                    if (!player) {
+                        await interaction.reply({content: "This player is not registered.", ephemeral: true});
+                        return;
+                    }
+                    if (bot.queue.has(player.id)) {
+                        await interaction.reply({content: `${player.username} is already in queue.`, ephemeral: true});
+                        return;
+                    }
+                    await bot.queue.join(player);
+                    await interaction.reply({content: `${player.username} has been added to the queue`});
+
+                } else if (subcommand == "kick") {
+
+                    const player = await Player.get(interaction.options.getUser("target").id);
+                    if (!player) {
+                        await interaction.reply({content: "This player is not registered.", ephemeral: true});
+                        return;
+                    }
+                    if (!bot.queue.has(player.id)) {
+                        await interaction.reply({content: `${player.username} is not in the queue.`, ephemeral: true});
+                        return;
+                    }
+                    bot.queue.delete(player.id);
+                    await bot.queue.update(`${player.username} has been removed`);
+                    await interaction.reply({content: `${player.username} has been kicked from the queue.`});
+
+                } else if (subcommand == "reset") {
+
+                    bot.queue = new Queue(bot.queue.channel);
+                    await bot.queue.update("The queue has been reset.");
+                    await interaction.reply({content: "The queue has been reset."});
+
+                }
+
+            } else if (group == "player") {
+                const user = await interaction.options.getUser("target");
+
+                if (subcommand == "register") {
+                    const player = await Player.get(user.id);
+                    if (player) {
+                        await interaction.reply({content: "This player is already registered.", ephemeral: true});
+                        return;
+                    }
+                    const username = interaction.options.getString("username") ?? interaction.options.getUser("target").username;
+                    await Player.post(new Player(user.id, username));
+                    await interaction.reply({content: `<@!${user.id}> has been registered as ${username}.`});
+
+                } else if (subcommand == "set-username") {
+
+                    const player = await Player.get(user.id);
+                    if (!player) {
+                        await interaction.reply({content: "This player is not registered.", ephemeral: true});
+                        return;
+                    }
+                    const oldUsername = player.username;
+                    const username = interaction.options.getString("username");
+                    player.username = username;
+                    await player.save();
+                    if (isValidUsername(username)) await interaction.reply({content: `${oldUsername} is now ${username}.`});
+                    else await interaction.reply({content: `${oldUsername} is now ${username}. Warning, this username is against the rules. Please address this.`, ephemeral: true});
+
+                } else if (subcommand == "set-stats") {
+
+                    const player = await Player.get(user.id);
+                    if (!player) {
+                        await interaction.reply({content: "This player is not registered.", ephemeral: true});
+                        return;
+                    }
+                    player.points = interaction.options.getInteger("points") ?? player.points;
+                    player.wins = interaction.options.getInteger("wins") ?? player.wins;
+                    player.losses = interaction.options.getInteger("losses") ?? player.losses;
+                    player.draws = interaction.options.getInteger("draws") ?? player.draws;
+                    await player.save();
+                    await bot.database.updateRankings();
+                    await interaction.reply({content: `${player.username} has been updated.`});
+
+                } else if (subcommand == "ban") {
+
+                    const player = await Player.get(user.id);
+                    if (!player) {
+                        await interaction.reply({content: "This player is not registered.", ephemeral: true});
+                        return;
+                    }
+                    const magnitude = interaction.options.getInteger("length");
+                    const unit = interaction.options.getString("unit");
+                    const time = Math.round(Date.now() / 1000);
+                    const response = await ban(player, magnitude, unit, time);
+                    await interaction.reply({content: response});
+
+                } else if (subcommand == "unban") {
+
+                    const player = await Player.get(user.id);
+                    if (!player) {
+                        await interaction.reply({content: "This player is not registered.", ephemeral: true});
+                        return;
+                    }
+                    player.banTime = 0;
+                    await player.save();
+                    await interaction.reply({content: `**${player.username}** has been unbanned from ten-mans.`}) ;
+
+                }
+            }
+        } catch (error) {
+            if (interaction.replied) await interaction.followUp({content: "Sorry, this didn't work.", ephemeral: true});
+            else await interaction.reply({content: "Sorry, this didn't work", ephemeral: true});
         }
-
-        return response;
     }
 }
-const censoredWords = blacklist.list.split(" ");
+
+async function ban(player: Player, magnitude: number, unit: string, time: number): Promise<string> {
+    switch (unit) {
+        case "minutes":
+            time += magnitude * 60;
+            break;
+        case "hours":
+            time += magnitude * 3600;
+            break;
+        case "days":
+            time += magnitude * 86400;
+            break;
+        case "weeks":
+            time += magnitude * 604800;
+            break;
+        case "months":
+            time += magnitude * 2629800;
+            break;
+        case "years":
+            time += magnitude * 31556952;
+            break;
+    }
+    player.banTime = time;
+    await player.save();
+    if (bot.queue.has(player.id)) {
+        bot.queue.delete(player.id);
+        await bot.queue.update(`${player.username} has been kicked from the queue`);
+    }
+    return `**${player.username}** has been banned from ten-mans until <t:${time}:F>`;
+}
+
 
 function isValidUsername(username: String): boolean {
     for (const word of censoredWords) if (username.toLowerCase().includes(word)) return false;

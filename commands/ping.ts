@@ -7,7 +7,9 @@ module.exports = {
         .setDescription("pong")
     ,
 
+    global: true,
+
     async execute(interaction: CommandInteraction) {
-        return {content: "pong", ephemeral: true};
+        await interaction.reply({content: "pong", ephemeral: true});
     }
 }

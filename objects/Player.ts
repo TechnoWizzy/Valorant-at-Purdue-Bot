@@ -1,4 +1,4 @@
-import {collections} from "../database/database.service";
+import {bot} from "../index";
 
 export default class Player {
     private _id: string;
@@ -102,7 +102,7 @@ export default class Player {
     static async get(id: string) {
         try {
             const query = { _id: id };
-            const player = Player.fromObject(await collections.players.findOne(query));
+            const player = Player.fromObject(await bot.database.players.findOne(query));
 
             if (player) {
                 return player;
@@ -126,10 +126,10 @@ export default class Player {
     }
 
     static async put(player: Player) {
-        await collections.players.updateOne({ _id: (player.id) }, { $set: player });
+        await bot.database.players.updateOne({ _id: (player.id) }, { $set: player });
     }
 
     static async delete(player: Player) {
-        await collections.players.deleteOne({ _id: (player.id) });
+        await bot.database.players.deleteOne({ _id: (player.id) });
     }
 }

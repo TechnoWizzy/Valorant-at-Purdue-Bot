@@ -1,9 +1,9 @@
 import {SlashCommandBuilder} from "@discordjs/builders";
-import {CommandInteraction, GuildMember, InteractionReplyOptions} from "discord.js";
+import {ChatInputCommandInteraction, GuildMember} from "discord.js";
 import Player from "../objects/Player";
 import * as blacklist from "../blacklist.json";
-import {updateRankings} from "../database/database.service";
 import ProfileImage from "../objects/images/Profile.Image";
+import {bot} from "../index";
 
 const censoredWords = blacklist.list.split(" ");
 
@@ -11,7 +11,6 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName("profile")
         .setDescription("General-use profile command")
-        .setDefaultPermission(true)
 
         // info - subcommand
         .addSubcommand((command) => command
@@ -22,7 +21,6 @@ module.exports = {
                 .setDescription('The profile to view')
             )
         )
-
         // set-name - subcommand
         .addSubcommand((command) => command
             .setName('set-name')
@@ -35,40 +33,31 @@ module.exports = {
         )
     ,
 
-    async execute(interaction: CommandInteraction): Promise<InteractionReplyOptions> {
-        let response = {content: null, files: null, ephemeral: true};
-        let player: Player;
-        await updateRankings();
-        const subcommand = interaction.options.getSubcommand();
-        switch (subcommand) {
-            case "info":
-                const mentionable = interaction.options.getMentionable('target') as GuildMember;
-                player = mentionable ? await Player.get(mentionable.id) : await Player.get(interaction.user.id);
-                if (player) {
-                    response.content = `<@${interaction.user.id}>`
-                    response.files = [await ProfileImage.build(player)];
-                    response.ephemeral = false;
-                } else {
-                    response.content = `Unable to retrieve this profile`;
-                }
-                break;
+    async execute(interaction: ChatInputCommandInteraction) {
 
-            case "set-name":
-                let username = interaction.options.getString("username");
-                player = (await Player.get(interaction.user.id)) as Player;
-                if (player) {
-                    if (isValidUsername(username)) {
-                        player.username = username;
-                        await Player.put(player);
-                        response.content = `Success! You have changed your username to \`${username}\``;
-                    } else {
-                        response.content = `Sorry, the provided username, \`${username}\`, isn't allowed`;
-                    }
-                } else {
-                    response.content = `Unable to retrieve this profile`;
-                }
+        const subcommand = interaction.options.getSubcommand();
+
+        if (subcommand == "info") {
+
+            await interaction.deferReply();
+            await bot.database.updateRankings();
+            const mentionable = interaction.options.getMentionable('target') as GuildMember;
+            const player = mentionable ? await Player.get(mentionable.id) : await Player.get(interaction.user.id);
+            if (!player) return interaction.editReply({content: "This player is not registered."});
+            const file = await ProfileImage.build(player);
+            await interaction.editReply({files: [file]});
+
+        } else if (subcommand == "set-name") {
+
+            const username = interaction.options.getString("username");
+            const player = (await Player.get(interaction.user.id)) as Player;
+            if (!player) return interaction.reply({content: "This player is not registered.", ephemeral: true});
+            if (!isValidUsername(username)) return interaction.reply({content: `Sorry, the provided username, \`${username}\`, isn't allowed`, ephemeral: true});
+            player.username = username;
+            await Player.put(player);
+            await interaction.reply({content: `Success! You have changed your username to \`${username}\``});
+
         }
-        return response;
     }
 }
 

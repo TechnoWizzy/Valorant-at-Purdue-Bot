@@ -7,27 +7,11 @@ export default class ImageUtils {
         ctx.textAlign = alignment;
         ctx.font = font;
         ctx.fillText(text, x, y);
-    }
-
-    private static roundedImage
-    (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
-        ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + width - radius, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-        ctx.lineTo(x + width, y + height - radius);
-        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-        ctx.lineTo(x + radius, y + height);
-        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-        ctx.closePath();
+        ctx.save();
     }
 
     public static printImage
-    (ctx: CanvasRenderingContext2D, image: Image, x: number, y: number, width: number, height: number, radius: number) {
-        ImageUtils.roundedImage(ctx, x, y, width, height, radius);
-        ctx.clip();
+    (ctx: CanvasRenderingContext2D, image: Image, x: number, y: number, width: number, height: number) {
         ctx.drawImage(image, x, y, width, height);
         ctx.restore();
         ctx.save();
@@ -41,10 +25,25 @@ export default class ImageUtils {
         ctx.fill();
         ctx.save();
         ctx.beginPath();
-        ctx.arc(x + d / 2, y + d / 2, d / 2.1, 0, Math.PI * 2, true);
+        ctx.arc(x + d / 2, y + d / 2, d / 2.05, 0, Math.PI * 2, true);
         ctx.fillStyle = "#000000";
         ctx.clip();
         ctx.fill();
         ctx.drawImage(avatar, x, y, d / 1, d / 1);
+    }
+
+    public static ordinalSuffixOf(i): string {
+        let j = i % 10,
+            k = i % 100;
+        if (j == 1 && k != 11) {
+            return i + "st";
+        }
+        if (j == 2 && k != 12) {
+            return i + "nd";
+        }
+        if (j == 3 && k != 13) {
+            return i + "rd";
+        }
+        return i + "th";
     }
 }

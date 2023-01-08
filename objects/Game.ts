@@ -1,63 +1,36 @@
-import Team from "./Team";
-import * as config from "../config.json";
-import Queue from "./Queue";
 import {bot} from "../index";
+import * as config from "../config.json";
 import {
+    ActionRowBuilder,
+    AttachmentBuilder,
     CategoryChannel,
-    MessageActionRow,
-    MessageAttachment,
-    MessageEmbed,
-    MessageSelectMenu,
-    TextChannel
+    SelectMenuBuilder,
+    TextChannel, VoiceChannel
 } from "discord.js";
-import {collections, updateRankings} from "../database/database.service";
 import Player from "./Player";
+import {Document, Filter, UpdateFilter, UpdateOptions} from "mongodb";
+import Team from "./Team";
+import GameEmbed from "./embeds/Game.Embed";
 
 export default class Game {
     private _id: string;
     private _phase: number;
-    private _players: Array<object>;
-    private _teams: Array<object>;
-    private _winner: object;
-    private _loser: object;
+    private _players: Array<string>;
+    private _teamOne: string;
+    private _teamTwo: string;
+    private _result: GameResult;
     private _channel: string;
     private _map: string;
 
-    constructor(id: string, phase: number = 1, players: Array<object> = [], teams: Array<object> = [], winner: object = null, loser: object = null, channel: string = "", map = null) {
-        this._id = id;
-        this._phase = phase;
-        this._players = players;
-        this._teams = teams;
-        this._winner = winner;
-        this._loser = loser;
-        this._channel = channel;
-        this._map = map ?? config.maps[Math.floor(Math.random() * config.maps.length)];
-    }
-
-    static fromObject(object) {
-        return new Game(object._id, object._phase, object._players, object._teams, object._winner, object._loser, object._channel, object._map);
-    }
-
-    static async create(queue: Queue) {
-        let players = [];
-        let id = await collections.games.countDocuments() + 1;
-        let channel = await Game.createChannel(id);
-        let mentions = ""
-        for (let [key] of queue) {
-            players.push(await Player.get(key));
-            queue.delete(key);
-        }
-        players.forEach(player => mentions = mentions.concat(`<@!${player.id}> `));
-        let teamOne = await Team.create(1);
-        let teamTwo = await Team.create(2);
-        let game = new Game(id.toString(), 1, players, [teamOne, teamTwo], null, null, "", null);
-        game.channel = channel.id;
-        //await channel.permissionOverwrites.create(bot.guild.id,{VIEW_CHANNEL: false});
-        //await channel.permissionOverwrites.create("824110063748120577", {VIEW_CHANNEL: true});
-        await channel.send({content: `\`${mentions}\``, embeds: [game.toEmbed()]}).then(message => {
-            message.edit({content: "@everyone"})
-        });
-        await Game.post(game);
+    constructor(id: string = null, phase: GamePhase = 0, players: Array<string> = new Array<string>(), teamOne: string = null, teamTwo: string = null, result = null, channel: string = null, map: string = null) {
+        this.id = id;
+        this.phase = phase;
+        this.players = players;
+        this.teamOne = teamOne;
+        this.teamTwo = teamTwo;
+        this.result = result;
+        this.channel = channel;
+        this.map = map;
     }
 
     get id(): string {
@@ -76,36 +49,36 @@ export default class Game {
         this._phase = value;
     }
 
-    get players(): Array<object> {
+    get players(): Array<string> {
         return this._players;
     }
 
-    set players(value: Array<object>) {
+    set players(value: Array<string>) {
         this._players = value;
     }
 
-    get teams(): Array<object> {
-        return this._teams;
+    get teamOne(): string {
+        return this._teamOne;
     }
 
-    set teams(value: Array<object>) {
-        this._teams = value;
+    set teamOne(value: string) {
+        this._teamOne = value;
     }
 
-    get winner(): object {
-        return this._winner;
+    get teamTwo(): string {
+        return this._teamTwo;
     }
 
-    set winner(value: object) {
-        this._winner = value;
+    set teamTwo(value: string) {
+        this._teamTwo = value;
     }
 
-    get loser(): object {
-        return this._loser;
+    get result(): GameResult {
+        return this._result;
     }
 
-    set loser(value: object) {
-        this._loser = value;
+    set result(value: GameResult) {
+        this._result = value;
     }
 
     get channel(): string {
@@ -124,230 +97,182 @@ export default class Game {
         this._map = value;
     }
 
-    getMapAttachment(): MessageAttachment {
-        let mapFileName = this.map.replace(/ /g,"_").toLowerCase();
-        return new MessageAttachment(`./media/maps/${mapFileName}.png`);
+    public static fromObject(document: Document): Game {
+        if (!document) return null;
+        return new Game(document._id, document._phase, document._players, document._teamOne, document._teamTwo, document._winner, document._channel, document._map);
     }
 
-    public async pick(target: Player, index: number) {
-        let response;
-        let channel = await bot.guild.channels.fetch(this.channel) as TextChannel;
-        let teamOne = Team.fromObject(this.teams[index]);
-        let teamTwo = Team.fromObject(this.teams[Math.abs(index - 1)])
-        let captainOne = Player.fromObject(teamOne.players[0]);
-        let captainTwo = Player.fromObject(teamTwo.players[0]);
-        this.players = this.players.filter((object) => object["_id"] != target.id);
-        switch (this.players.length + 1) {
-            case 8: case 6:
-                response ={
-                    content: `**${captainOne.username}** has picked **${target.username}**. <@!${captainTwo.id}> please pick two players.`,
-                    components: [this.buildSelectMenu()]
-                };
-                break;
-            case 7: case 5:
-                response = {
-                    content: `**${captainOne.username}** has picked **${target.username}**. <@!${captainOne.id}> please pick another player.`,
-                    components: [this.buildSelectMenu()]};
-                break;
-            case 4: case 3:
-                response = {
-                    content: `**${captainOne.username}** has picked **${target.username}**. <@!${captainTwo.id}> please pick another player.`,
-                    components: [this.buildSelectMenu()]};
-                break;
-            case 2:
-                response = { content: `**${captainOne.username}** has picked **${target.username}**.`};
-                break;
-            case 1:
-                response = {content: `**${captainOne.username}** has received **${target.username}**.`};
-                this.phase = 2;
-                break;
-        }
-        teamOne.players.push(target);
-        this.teams[index] = teamOne;
-        await Team.put(teamOne);
-        await Game.put(this);
-        await channel.send(response);
-    }
-
-    public buildSelectMenu() {
-        let actionRow = new MessageActionRow();
-        let selectMenu = new MessageSelectMenu().setCustomId(`select_teams`).setPlaceholder('Select a player!');
-        let players = this.players;
-        for (const object of players) {
-            let player = Player.fromObject(object);
-            selectMenu.addOptions([
-                {
-                    label: player.username,
-                    value: player.id,
-                    emoji: config.emotes.valorant
-                }
-            ])
-        }
-        actionRow.addComponents(selectMenu);
-        return actionRow;
-    }
-
-    static async createChannel(id) {
+    public async init(players: Array<Player>) {
+        const id = await bot.database.games.countDocuments() + 1;
         const category = await bot.guild.channels.fetch(config.categories["10mans"]) as CategoryChannel;
-        return await category.createChannel(`game ${id}`);
-    }
+        const channel = await category.children.create({name: `game-${id}`})
+        const teamOne = new Team(String(await bot.database.teams.countDocuments() + 1));
+        const teamTwo = new Team(String(await bot.database.teams.countDocuments() + 2));
+        const playerIds: Array<string> = new Array<string>();
 
-    async deleteChannel() {
-        if (this.channel != null) {
-            let channel = await bot.guild.channels.fetch(this.channel);
-            await channel.delete();
-            this.channel = null;
-        }
-    }
+        for (const player of players) playerIds.push(player.id);
 
-    async start() {
-        this.phase = 2;
-        let channel = await bot.guild.channels.fetch(this.channel) as TextChannel;
+        this.id = id.toString();
+        this.phase = GamePhase.PickPhase;
+        this.channel = channel.id
+        this.teamOne = teamOne.id;
+        this.teamTwo = teamTwo.id;
+        this.players = playerIds;
+        this.map = config.maps[Math.floor(Math.random() * 7)];
+
+        await teamOne.save();
+        await teamTwo.save();
+        await this.save();
+
         let mentions = "";
-        let embed = this.toEmbed();
-        let attachment = this.getMapAttachment();
-        for (let i = 0; i < 2; i ++) {
-            let team = Team.fromObject(this.teams[i]);
-            await team.createChannel();
-            for (let j = 0; j < team.players.length; j++) {
-                let player = Player.fromObject(team.players[j]);
-                mentions = mentions = mentions.concat(`<@!${player.id}> `);
+        for (const player of this.players) mentions += `<@${player}>  `;
+
+        await channel.send({content: mentions});
+        await channel.send({content: `\n\n**Please pick teams using </pick:988442478136942618>**>`});
+    }
+
+    public async start() {
+        let mentions = String();
+        const map = new AttachmentBuilder(`./maps/${this.map.replace(/ /g,"_").toLowerCase()}.jpg`, {name: "map.jpg"});
+        const embed = new GameEmbed(this, await Team.get(this.teamOne), await Team.get(this.teamTwo)).setImage("attachment://map.jpg");
+        const channel = await bot.guild.channels.fetch(this.channel) as TextChannel;
+        for (const id of this.players) mentions += `<@${id}> `;
+        await channel.send({content: mentions, embeds: [embed], files: [map]});
+    }
+
+    public async end(result: GameResult) {
+        const channel = await bot.guild.channels.fetch(config.channels["10mans"]) as TextChannel;
+        const voice = await bot.guild.channels.fetch(config.channels["10mans-vc"]) as VoiceChannel;
+        const teamOne = await Team.get(this.teamOne);
+        const teamTwo = await Team.get(this.teamTwo);
+        const teamOneVoice = await bot.guild.channels.fetch(teamOne.channel) as VoiceChannel;
+        const teamTwoVoice = await bot.guild.channels.fetch(teamTwo.channel) as VoiceChannel;
+        for (const [,member] of teamOneVoice.members) await member.voice.setChannel(voice);
+        for (const [,member] of teamTwoVoice.members) await member.voice.setChannel(voice);
+        await teamOneVoice.delete();
+        await teamTwoVoice.delete();
+        await bot.guild.channels.delete(this.channel);
+
+        if (result == GameResult.TeamOneVictory) {
+            for (const id of teamOne.players) {
+                const player = await Player.get(id);
+                player.points += 2;
+                player.wins += 1;
+                await player.save();
+            }
+            for (const id of teamTwo.players) {
+                const player = await Player.get(id);
+                player.points += 1;
+                player.losses += 1;
+                await player.save();
+            }
+            await channel.send({content: `Team 1 has won Game ${this.id}.`, embeds: [new GameEmbed(this, teamOne, teamTwo)]});
+        } else if (result == GameResult.TeamTwoVictory) {
+            for (const id of teamTwo.players) {
+                const player = await Player.get(id);
+                player.points += 2;
+                player.wins += 1;
+                await player.save();
+            }
+            for (const id of teamOne.players) {
+                const player = await Player.get(id);
+                player.points += 1;
+                player.losses += 1;
+                await player.save();
+            }
+            await channel.send({content: `Team 2 has won Game ${this.id}.`, embeds: [new GameEmbed(this, teamOne, teamTwo)]});
+        } else {
+            for (const id of teamOne.players) {
+                const player = await Player.get(id);
+                player.points += 1;
+                player.draws += 1;
+                await player.save();
+            }
+            for (const id of teamTwo.players) {
+                const player = await Player.get(id);
+                player.points += 1;
+                player.draws += 1;
+                await player.save();
+            }
+            await channel.send({content: `Game ${this.id} has been called a draw.`, embeds: [new GameEmbed(this, teamOne, teamTwo)]});
+        }
+        await bot.database.updateRankings();
+        this.phase = GamePhase.EndPhase;
+        await this.save();
+    }
+
+    public async sub(sub: Player, target: Player): Promise<boolean> {
+        const teamOne = await Team.get(this.teamOne);
+        const teamTwo = await Team.get(this.teamTwo);
+
+        for (const id of this.players) {
+            if (sub.id == id) {
+                return false;
             }
         }
-        await channel.send({content: `${mentions}`, embeds: [embed], files: [attachment]});
-    }
 
-    async sub(sub: Player, target: Player): Promise<boolean> {
-        let response = false;
-        for (let i = 0; i < this.players.length; i++) {
-            let player = Player.fromObject(this._players[i]);
-            if (target.id == player.id) {
-                this._players.splice(i, 1);
-                this._players.push(sub)
-                await Game.put(this);
+        for (const id of teamOne.players) {
+            if (target.id == id) {
+                this.players.splice(this.players.indexOf(id), 1, sub.id);
+                teamOne.players.splice(teamOne.players.indexOf(id), 1, sub.id);
+                await this.save();
+                await teamOne.save();
                 return true;
             }
         }
-        response = await Team.fromObject(this.teams[0]).sub(sub, target) ? true : response;
-        response = await Team.fromObject(this.teams[0]).sub(sub, target) ? true : response;
-        return response;
-    }
 
-    async end(code: number) {
-        let channel = await bot.guild.channels.fetch(config.channels["10mans"]) as TextChannel;
-        this.phase = 0;
-        await (await Team.get(this.teams[0]["_id"])).deleteChannel();
-        await (await Team.get(this.teams[1]["_id"])).deleteChannel();
-        switch (code) {
-            case 0: case 1:
-                let winner = Team.fromObject(this.teams[code]);
-                let loser = Team.fromObject(this.teams[Math.abs(code - 1)]);
-                this.winner = winner;
-                this.loser = loser;
-                await winner.setWinner();
-                await loser.setLoser();
-                await channel.send({content: `Team ${code + 1} has won Game ${this.id}.`, embeds: [this.toEmbed()]});
-                break;
-            case 2:
-                await channel.send({content: `Game ${this.id} has been called a draw.`, embeds: [this.toEmbed()]});
-        }
-        await this.deleteChannel();
-        await updateRankings();
-        await Game.put(this);
-    }
-
-    toEmbed(): MessageEmbed {
-        let embed = new MessageEmbed()
-            .setTitle(`Game ${this.id} - Purdue University Pro League`)
-
-        for (let i = 0; i < 2; i++) {
-            const team = Team.fromObject(this.teams[i]);
-            let  title = `Team ${team.index}`;
-            if (this.winner != null) title = team.id == Team.fromObject(this.winner).id ? `WINNER - Team ${team.index}` : title;
-            let description = team.players.length > 0 ? `Player: <@!${Player.fromObject(team.players[0]).id}>` : `No Players`;
-            for (let j = 1; j < 5; j++) {
-                if (team.players[j]) description = description.concat(`\nPlayer: <@!${Player.fromObject(team.players[j]).id}>`);
+        for (const id of teamTwo.players) {
+            if (target.id == id) {
+                this.players.splice(this.players.indexOf(id), 1, sub.id);
+                teamTwo.players.splice(teamTwo.players.indexOf(id), 1, sub.id);
+                await this.save();
+                await teamTwo.save();
+                return true;
             }
-            embed.addField(title, description, true);
         }
 
-        switch(this.phase) {
-            case 0: embed.setColor("GREEN");
-                break
-            case 1: embed.setColor("RED");
-                break;
-            case 2:
-                let mapFileName = this.map.replace(/ /g,"_").toLowerCase();
-                embed.setColor("ORANGE");
-                embed.setImage(`attachment://${mapFileName}.png`);
-                break;
-        }
-        return embed;
+        return false;
     }
 
-    async save(): Promise<boolean> {
-        await Game.put(this);
-        return true;
+    public async unpickedPlayers(): Promise<Array<Player>> {
+        const unpickedPlayers = new Array<string>();
+        const players = new Array<Player>();
+        const teamOne = await Team.get(this.teamOne);
+        const teamTwo = await Team.get(this.teamTwo);
+        for (const player of this.players) unpickedPlayers.push(player);
+        for (const player of teamOne.players) unpickedPlayers.splice(unpickedPlayers.indexOf(player), 1);
+        for (const player of teamTwo.players) unpickedPlayers.splice(unpickedPlayers.indexOf(player), 1);
+        for (const player of unpickedPlayers) players.push(await Player.get(player));
+        return players;
     }
 
-    async delete(): Promise<boolean> {
-        await Game.delete(this);
-        return true;
+    public async save() {
+        const query: Filter<any> = {_id: this.id};
+        const update: UpdateFilter<any> = {$set: this};
+        const options: UpdateOptions = {upsert: true};
+        await bot.database.games.updateOne(query, update, options);
     }
 
-    static async get(id: string) {
+    public static async get(id: string): Promise<Game> {
         try {
             const query = { _id: id };
-            const game = Game.fromObject(await collections.games.findOne(query));
-
-            if (game) {
-                return game;
-            }
+            const document = await bot.database.games.findOne(query);
+            if (!document) return null;
+            return Game.fromObject(document);
         } catch (error) {
-            return undefined;
+            return null;
         }
-    }
-
-    static async post(game: Game) {
-        try {
-            const newGame = (game);
-            // @ts-ignore
-            return await collections.games.insertOne(newGame);
-
-        } catch (error) {
-            console.error(error);
-            return undefined;
-        }
-    }
-
-    static async put(game: Game) {
-        await collections.games.updateOne({ _id: (game.id) }, { $set: game });
-    }
-
-    static async delete(game: Game) {
-        await collections.games.deleteOne({ _id: (game.id) });
     }
 }
 
-function mergeSort(players: Array<Player>) {
-    const half = players.length / 2
-
-    if (players.length < 2){
-        return players
-    }
-
-    const left = players.splice(0, half)
-    return merge(mergeSort(left),mergeSort(players))
+export enum GamePhase {
+    EndPhase = -1,
+    PickPhase = 0,
+    PlayPhase = 1,
 }
 
-function merge(left: Array<Player>, right: Array<Player>) {
-    let arr = []
-    while (left.length && right.length) {
-        if (left[0].rank < right[0].rank) {
-            arr.push(left.shift())
-        } else {
-            arr.push(right.shift())
-        }
-    }
-    return [ ...arr, ...left, ...right ]
+export enum GameResult {
+    Draw = 0,
+    TeamOneVictory = 1,
+    TeamTwoVictory = 2
 }

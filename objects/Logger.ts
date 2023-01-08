@@ -1,4 +1,4 @@
-import {MessageEmbed, TextChannel} from "discord.js";
+import {EmbedBuilder, TextChannel} from "discord.js";
 
 export default class Logger {
     private channel: TextChannel;
@@ -38,15 +38,15 @@ export default class Logger {
     }
 
     buildLog(level: LogLevel, info: string, error = null) {
-        const embed = new MessageEmbed().setTitle(info);
+        const embed = new EmbedBuilder().setTitle(info);
         if (level < 2) embed.setDescription(error.message + "\n" + error.stack);
         switch (level) {
-            case 0: embed.setColor("RED"); break;
-            case 1: embed.setColor("ORANGE"); break;
-            case 2: embed.setColor("YELLOW"); break;
-            case 3: embed.setColor("GREEN"); break;
-            case 4: embed.setColor("BLUE"); break;
-            case 5: embed.setColor("DARK_BLUE"); break;
+            case 0: embed.setColor("Red"); break;
+            case 1: embed.setColor("Orange"); break;
+            case 2: embed.setColor("Yellow"); break;
+            case 3: embed.setColor("Green"); break;
+            case 4: embed.setColor("Blue"); break;
+            case 5: embed.setColor("DarkBlue"); break;
         }
         return embed;
     }

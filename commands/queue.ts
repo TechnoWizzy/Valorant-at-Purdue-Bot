@@ -1,5 +1,5 @@
 import {SlashCommandBuilder} from "@discordjs/builders";
-import {ButtonInteraction, CommandInteraction, Message} from "discord.js";
+import {ButtonInteraction, ChatInputCommandInteraction} from "discord.js";
 import {bot} from "../index";
 import Player from "../objects/Player";
 
@@ -7,7 +7,6 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName("queue")
         .setDescription("General-purpose queue interactions")
-        .setDefaultPermission(true)
 
         // view - subcommand
         .addSubcommand((command) => command
@@ -27,28 +26,26 @@ module.exports = {
             .setDescription('Command to leave the queue')
         ),
 
-    async execute(interaction: CommandInteraction | ButtonInteraction) {
-        let response = {content: null, ephemeral: true};
-        let subcommand = interaction instanceof CommandInteraction ? interaction.options.getSubcommand() : interaction.customId;
-        let player = await Player.get(interaction.user.id);
-        if (!player) response = {content: "Use \`/register\` to be able to interact with the PUPL Queue.", ephemeral: true};
-        else {
-            if (player.banTime > Math.round(Date.now() / 1000)) return interaction.reply({content: `You will be unbanned <t:${player.banTime}:R>`, ephemeral: true});
-            switch (subcommand) {
-                case 'bump': case 'v':
-                    await bot.queue.update("Current Queue", 1);
-                    break;
-                case 'join': case 'j':
-                    response.content = await bot.queue.join(player);
-                    break;
-                case 'leave': case 'l':
-                    response.content = bot.queue.remove(player);
-                    break;
-                default:
-                    response.content = "Something went very wrong... Please send this to <@!751910711218667562>.";
-                    await bot.logger.fatal("Manage Command Failed", new Error("Inaccessible option"));
-            }
+    async execute(interaction: ChatInputCommandInteraction | ButtonInteraction): Promise<void> {
+        const subcommand = interaction instanceof ChatInputCommandInteraction ? interaction.options.getSubcommand() : interaction.customId;
+        const player = await Player.get(interaction.user.id);
+        if (!player) {
+            await interaction.reply({content: "Use \`/register\` to be able to interact with the ten-mans queue.", ephemeral: true});
+            return;
         }
-        return response;
+        if (player.banTime > Math.round(Date.now() / 1000)) {
+            await interaction.reply({content: `You will be unbanned <t:${player.banTime}:R>`, ephemeral: true});
+            return;
+        }
+        if (subcommand == "bump" || subcommand == "v") {
+            await bot.queue.update("Current Queue");
+            await interaction.reply({content: "Success", ephemeral: true});
+        } else if (subcommand == "join" || subcommand == "v") {
+            const response = await bot.queue.join(player);
+            if (response) await interaction.reply({content: response, ephemeral: true});
+        } else if (subcommand == "leave" || subcommand == "l") {
+            const response = await bot.queue.remove(player);
+            if (response) await interaction.reply({content: response, ephemeral: true});
+        }
     }
 }

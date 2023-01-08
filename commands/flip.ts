@@ -1,5 +1,5 @@
 import {SlashCommandBuilder} from "@discordjs/builders";
-import {CommandInteraction, InteractionReplyOptions} from "discord.js";
+import {CommandInteraction} from "discord.js";
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -7,9 +7,9 @@ module.exports = {
         .setDescription("Flip a coin for heads or tails")
     ,
 
-    async execute(interaction: CommandInteraction): Promise<InteractionReplyOptions> {
-        let random = Math.random();
-        let message = random > 0.5 ? `<@${interaction.user.id}> Heads` : `<@${interaction.user.id}> Tails`
-        return ({content: message});
+    async execute(interaction: CommandInteraction): Promise<void> {
+        const random = Math.random();
+        const message = random > 0.5 ? `Heads` : `Tails`;
+        await interaction.reply({content: message});
     }
 }

@@ -1,32 +1,15 @@
-import {collections} from "../database/database.service";
-import * as config from "../config.json";
+import {Document, Filter, UpdateFilter, UpdateOptions} from "mongodb";
 import {bot} from "../index";
-import {CategoryChannel} from "discord.js";
-import Player from "./Player";
 
 export default class Team {
     private _id: string;
-    private _index: number;
     private _channel: string;
-    private _players: Array<Object>;
+    private _players: Array<string>;
 
-    constructor(id: string, index: number, channel: string = "", players: Array<Object> = []) {
-        this._id = id;
-        this._index = index;
-        this._channel = channel;
-        this._players = players;
-    }
-
-    static fromObject(object) {
-        if (object == null) return null;
-        return new Team(object._id, object._index,  object._channel, object._players);
-    }
-
-    static async create(index: number) {
-        const id = await collections.teams.countDocuments() + 1;
-        const team = new Team(id.toString(), index, "", []);
-        await Team.post(team);
-        return team;
+    constructor(id: string, channel: string = null, players: Array<string> = []) {
+        this.id = id;
+        this.channel = channel;
+        this.players = players;
     }
 
     get id(): string {
@@ -37,14 +20,6 @@ export default class Team {
         this._id = value;
     }
 
-    get index(): number {
-        return this._index;
-    }
-
-    set index(value: number) {
-        this._index = value;
-    }
-
     get channel(): string {
         return this._channel;
     }
@@ -53,124 +28,41 @@ export default class Team {
         this._channel = value;
     }
 
-    get players(): Array<Object> {
+    get players(): Array<string> {
         return this._players;
     }
 
-    set players(value: Array<Object>) {
+    set players(value: Array<string>) {
         this._players = value;
     }
 
-    async sub(sub: Player, target: Player): Promise<boolean> {
-        console.log(`Trying to sub ${sub.username} for ${target.username}`)
-        for (let i = 0; i < this.players.length; i++) {
-            let player = Player.fromObject(this._players[i]);
-            console.log(`Comparing ${target.username} to ${player.username}`);
-            if (target.id == player.id) {
-                this._players = this._players.splice(i, 1);
-                this._players.push(sub)
-                await Team.put(this);
-                return true;
-            }
+    public static fromObject(document: Document): Team {
+        return new Team(document._id, document._channel, document._players);
+    }
+
+    public stringify(): string {
+        let string = `**C**: <@${this.players[0]}>`;
+        for (let i = 1; i < 5; i++) {
+            if (this.players[i]) string += `\n<@${this.players[i]}>`;
         }
-        return false;
+        return string;
     }
 
-    async setWinner() {
-        await this.players.forEach(object => {
-            Player.get(object["_id"]).then(player => {
-                player.points += 2;
-                player.wins += 1;
-                Player.put(player);
-            });
-        });
+    public async save() {
+        const query: Filter<any> = {_id: this.id};
+        const update: UpdateFilter<any> = {$set: this};
+        const options: UpdateOptions = {upsert: true};
+        await bot.database.teams.updateOne(query, update, options);
     }
 
-    async setLoser() {
-        await this.players.forEach(object => {
-            Player.get(object["_id"]).then(player => {
-                player.points += 1;
-                player.losses += 1;
-                Player.put(player);
-            });
-        });
-    }
-
-    async createChannel() {
-        const category = await bot.guild.channels.fetch(config.categories["10mans"]) as CategoryChannel;
-        const channel = await category.createChannel(`Team ${this.index} Voice`,
-            {type: "GUILD_VOICE", permissionOverwrites: [
-                    {
-                        id: config.guild,
-                        allow: ["CONNECT"]
-                    },
-                    {
-                        id: config.roles.officer,
-                        allow: ["MOVE_MEMBERS"]
-                    }
-                ]
-            }
-        )
-        for (const object of this._players) {
-            let player = Player.fromObject(object);
-            await channel.permissionOverwrites.create(
-                await bot.guild.members.fetch(player.id),
-                {SPEAK: true, USE_VAD: true}
-            )
-            try {
-                let member = await bot.guild.members.fetch(player.id);
-                await member.voice.setChannel(channel);
-            } catch (error) { }
-        }
-        this.channel = channel.id;
-        await Team.put(this);
-    }
-
-    async deleteChannel() {
-        if (this.channel != null) {
-            const channel = await bot.guild.channels.fetch(this.channel);
-            for (let i = 0; i < this.players.length; i++) {
-                try {
-                    let member = await bot.guild.members.fetch(Player.fromObject(this.players[i]).id);
-                    await member.voice.setChannel(config.channels["10mans-vc"])
-                } catch (ignored) {}
-            }
-            await channel.delete();
-            this.channel = null;
-            await Team.put(this);
-        }
-    }
-
-    static async get(id: string) {
+    public static async get(id: string): Promise<Team> {
         try {
             const query = { _id: id };
-            const team = Team.fromObject(await collections.teams.findOne(query));
-
-            if (team) {
-                return team;
-            }
+            const document = await bot.database.teams.findOne(query);
+            if (!document) return null;
+            return Team.fromObject(document);
         } catch (error) {
             return undefined;
         }
-    }
-
-    static async post(team: Team) {
-        try {
-            const newTeam = (team);
-            // @ts-ignore
-            return await collections.teams.insertOne(newTeam);
-
-        } catch (error) {
-            console.error(error);
-            return undefined;
-        }
-    }
-
-    static async put(team: Team) {
-        await collections.teams.updateOne({ _id: (team.id) }, { $set: team });
-    }
-
-    static async delete(team: Team) {
-        await collections.teams.deleteOne({ _id: (team.id) });
     }
 }

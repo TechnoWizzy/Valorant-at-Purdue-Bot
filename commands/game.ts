@@ -1,12 +1,13 @@
 import {SlashCommandBuilder} from "@discordjs/builders";
-import {CommandInteraction, InteractionReplyOptions} from "discord.js";
+import {AttachmentBuilder, ChatInputCommandInteraction} from "discord.js";
+import GameEmbed from "../objects/embeds/Game.Embed";
+import Team from "../objects/Team";
 import Game from "../objects/Game";
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName("game")
         .setDescription("General-use command for viewing and managing games")
-        .setDefaultPermission(true)
 
         // info - subcommand
         .addSubcommand((command) => command
@@ -19,25 +20,21 @@ module.exports = {
         )
     ,
 
-    async execute(interaction: CommandInteraction): Promise<InteractionReplyOptions> {
-        let response = {content: null, embeds: null, files: null, ephemeral: true};
+    async execute(interaction: ChatInputCommandInteraction): Promise<void> {
         const subcommand = interaction.options.getSubcommand();
         const game = await Game.get(interaction.options.getInteger("id").toString());
 
-        if (game) {
-            switch (subcommand) {
-                case "info":
-                    const embed = await game.toEmbed();
-                    //const file = await GameImage.build(game);
-                    response.content = `<@${interaction.user.id}>`;
-                    response.embeds = [embed];
-                    //response.files = [file]
-                    response.ephemeral = false;
-                    break;
-            }
+        if (!game) {
+            await interaction.reply({content: "This game does not exist.", ephemeral: true});
+            return;
         }
-        else response.content ="This game does not exist.";
 
-        return response;
+        if (subcommand == "info") {
+            const teamOne = await Team.get(game.teamOne);
+            const teamTwo = await Team.get(game.teamTwo);
+            const map = new AttachmentBuilder(`./maps/${game.map.replace(/ /g,"_").toLowerCase()}.jpg`, {name: "map.jpg"});
+            const embed= new GameEmbed(game, teamOne, teamTwo).setImage("attachment://map.jpg");
+            await interaction.reply({embeds: [embed], files: [map]});
+        }
     }
 }

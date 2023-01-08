@@ -1,8 +1,9 @@
-import {MessageActionRow, MessageButton, MessageEmbed, TextChannel} from "discord.js";
+import {ActionRowBuilder, ButtonBuilder, EmbedBuilder, TextChannel} from "discord.js";
 import {bot} from "../index";
 import Player from "./Player";
 import Game from "./Game";
-import * as config from "../config.json";
+import QueueEmbed from "./embeds/Queue.Embed";
+import QueueRow from "./rows/Queue.Row";
 
 export default class Queue extends Map<string, NodeJS.Timeout>{
     private _time: number;
@@ -30,6 +31,17 @@ export default class Queue extends Map<string, NodeJS.Timeout>{
         this._channel = value;
     }
 
+    public async init() {
+        await this.update("A new queue has started");
+        for (const [,message] of (await this.channel.messages.fetch({limit: 6}))) {
+            if (message.author.id == bot.user.id) {
+                if (message.embeds.some(embed => embed.title == "A new queue has started")) {
+                    await message.delete();
+                }
+            }
+        }
+    }
+
     public async join(player: Player): Promise<string> {
         if (this.has(player.id)) return ("You are already in the queue.");
         else if (this.size == 10) return ("The queue is already full.");
@@ -37,29 +49,27 @@ export default class Queue extends Map<string, NodeJS.Timeout>{
             const timeout = global.setTimeout(Queue.timeout, this.time, this, player);
             this.set(player.id, timeout)
             if (this.size == 10) {
-                await this.update("A new game is starting...", 0);
-                this.forEach((timeout) => {
-                    clearTimeout(timeout);
-                })
-                bot.queue = new Queue(bot.lobbyChannel);
-                await Game.create(this)
-            } else this.update(`${player.username} has joined`, 1).then();
+                await this.update("A new game is starting...");
+                for (const timeout of this) clearTimeout(timeout[1]);
+                await new Game().init(await this.sortedPlayers());
+                bot.queue = new Queue(this.channel);
+            } else this.update(`${player.username} has joined`).then();
             return undefined;
         }
     }
 
-    public remove(player: Player): string {
+    public async remove(player: Player): Promise<string> {
         if (this.size == 10) return ("Queue has filled. You cannot leave at this time.");
         else if (this.has(player.id)) {
             clearTimeout(this.get(player.id));
             this.delete(player.id);
-            this.update(`${player.username} has left`, 2).then(() => {
+            this.update(`${player.username} has left`).then(() => {
             });
             return undefined;
         } else return ("You are not in the queue.");
     }
 
-    public async update(update: string, code: number, message = null) {
+    public async update(message: string, mention: string = null) {
         let messages = (await this.channel.messages.fetch({limit: 10}))
             .filter(message => message.author == bot.user);
 
@@ -68,31 +78,41 @@ export default class Queue extends Map<string, NodeJS.Timeout>{
                 if (message.embeds[0].title.toLowerCase().includes("10-mans")) await message.delete();
             }
         }
-        let options;
-        let embed = new MessageEmbed().setTitle("10-Mans: " + update.concat(` [${this.size}/10]`)).setDescription("");
-        const row = new MessageActionRow().addComponents(
-            new MessageButton().setLabel("Join").setCustomId("join").setStyle("SUCCESS"),
-            new MessageButton().setLabel("Leave").setCustomId("leave").setStyle("DANGER"),
-            new MessageButton().setLabel("Bump").setCustomId("bump").setStyle("SECONDARY"),
-            new MessageButton().setLabel("Register").setCustomId(config.roles.tenmans).setStyle("PRIMARY"));
-        let keys = this.keys();
-        for (let i = 0; i < this.size; i++) {
-            let player = await Player.get(keys.next().value);
-            embed.setDescription(embed.description.concat(`**${i + 1}.** ${player.username}\n`));
+
+        const players = await this.unsortedPlayers();
+        const embed: EmbedBuilder = new QueueEmbed(message, players);
+        const row: ActionRowBuilder<ButtonBuilder> = new QueueRow();
+
+        if (!mention) return this.channel.send({embeds: [embed], components: [row]});
+        await this.channel.send({content: mention, embeds: [embed], components: [row]});
+    }
+
+    public async sortedPlayers(): Promise<Array<Player>> {
+        const players = await this.unsortedPlayers();
+        for (let i = 0; i < players.length - 1; i++) {
+            for (let j = 0; j < players.length - i - 1; j++) {
+                const a = players[j];
+                const b = players[j + 1];
+                if (a.rank > b.rank) {
+                    players[j] = b;
+                    players[j + 1] = a;
+                }
+            }
         }
-        switch (code) {
-            case 0: embed.setColor("BLUE"); break;
-            case 1: embed.setColor("GREEN"); break;
-            case 2: embed.setColor("ORANGE"); break;
-            case 3: embed.setColor("WHITE"); break;
+        return players;
+    }
+
+    public async unsortedPlayers(): Promise<Array<Player>> {
+        const players: Array<Player> = []
+        for (const [key,] of this) {
+            const player = await Player.get(key);
+            players.push(player);
         }
-        if (message != null) options = {content: message, embeds: [embed], components: [row]}
-        else options = {embeds: [embed], components: [row]}
-        this.channel.send(options).then();
+        return players;
     }
 
     static async timeout(queue: Queue, player: Player) {
         queue.delete(player.id);
-        await queue.update(`${player.username} has been timed out`, 2, `<@!${player.id}>`);
+        await queue.update(`${player.username} has been timed out`, `<@!${player.id}>`);
     }
 }

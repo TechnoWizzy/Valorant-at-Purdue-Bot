@@ -1,12 +1,11 @@
 import {SlashCommandBuilder} from "@discordjs/builders";
-import {CommandInteraction, InteractionReplyOptions, MessageEmbed} from "discord.js";
+import {ChatInputCommandInteraction, EmbedBuilder} from "discord.js";
 import {bot} from "../index";
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName("help")
         .setDescription("Displays info about other commands.")
-        .setDefaultPermission(true)
 
         .addStringOption((string) => string
             .setName("command")
@@ -15,29 +14,28 @@ module.exports = {
         )
     ,
 
-    async execute(interaction: CommandInteraction): Promise<InteractionReplyOptions> {
-        let response = {content: null, embeds: null, ephemeral: true};
-        const embed = new MessageEmbed().setTitle("Help Menu - R6@Purdue").setColor("#5a69ea").setDescription("");
+    async execute(interaction: ChatInputCommandInteraction): Promise<void> {
         const command = interaction.options.getString("command") ?? "";
+        let description = "";
         const list = [];
+
         await bot.commands.forEach(command => {
             list.push([toTitleCase(command.data.name), command.data.description, command.data.options])
         });
+
         list.sort();
-        for (const [name, description, options] of list) {
+
+        for (const [name, nextDescription, options] of list) {
             if (name.toLowerCase().includes(command.toLowerCase())) {
-                embed.setDescription(embed.description.concat(`**${name}** - ${description}\n`));
+                description += `**${name}** - ${nextDescription}\n`;
                 for (const option of options) {
-                    embed.setDescription(embed.description.concat(mapOptions(name.toLowerCase(), option)));
-                    //console.log(mapOptions(name, option));
+                    description += mapOptions(name.toLowerCase(), option);
                 }
-                embed.setDescription(embed.description.concat("\n"))
+                description += "\n";
             }
         }
-        response.content = `<@${interaction.user.id}>`;
-        response.embeds = [embed];
-
-        return response;
+        const embed = new EmbedBuilder().setDescription(description).setTitle("Help Menu").setColor("#5a69ea");
+        await interaction.reply({embeds: [embed], ephemeral: true});
     }
 }
 

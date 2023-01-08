@@ -1,43 +1,32 @@
 import * as Canvas from "canvas";
 import {bot} from "../../index";
-import {GuildMember, MessageAttachment} from "discord.js";
+import {AttachmentBuilder, GuildMember} from "discord.js";
 import ImageUtils from "./ImageUtils";
 import Player from "../Player";
 
 export default class ProfileImage {
-    public static async build(player: Player): Promise<MessageAttachment> {
-        const canvas = Canvas.createCanvas(1000, 600);
+    public static async build(player: Player): Promise<AttachmentBuilder> {
+        const canvas = Canvas.createCanvas(644, 900);
         const ctx = canvas.getContext('2d');
         const user = await bot.guild.members.fetch(player.id) as GuildMember;
-        const avatar = await Canvas.loadImage(user.displayAvatarURL({ format: 'jpg' }));
-        const index = Math.floor(player.points / 10) > 6 ? 6 : Math.floor(player.points / 10);
-        const background = await Canvas.loadImage("./media/background.png");
-        const panel = await Canvas.loadImage("./media/panel.png");
-        const gray = await Canvas.loadImage("./media/gray.png");
+        const avatar = await Canvas.loadImage(user.displayAvatarURL({ extension: 'jpg', size: 512 }));
+        const index = Math.floor(player.points / 5) > 6 ? 6 : Math.floor(player.points / 5);
+        const background = await Canvas.loadImage("./media/profile.png");
         const rank = await Canvas.loadImage(`./media/ranks/${index}.png`);
-        //const logo = await Canvas.loadImage("./media/valorant.png");
 
-        ImageUtils.printImage(ctx, background, 0, 0, canvas.width, canvas.height, 25);
-        ImageUtils.printImage(ctx, gray, 18, 160, canvas.width - 36, canvas.height - 178, 20);
-        ImageUtils.printImage(ctx, panel, 24, 166, canvas.width - 48, canvas.height - 190, 20);
-        //ImageUtils.printImage(ctx, logo, canvas.width - 108, 18, 90, 90, 1);
-        ImageUtils.printImage(ctx, rank, 600, 250, 175, 175, 0);
+        ImageUtils.printImage(ctx, background, 0, 0, canvas.width, canvas.height);
+        ImageUtils.printImage(ctx, rank, 87, 222, 135, 135);
 
-        ImageUtils.printText(ctx, `${player.username}`, canvas.width / 5, 80, "#ffffff", "72px sans-serif", "left");
-        ImageUtils.printText(ctx, `Purdue University Pro League`, canvas.width / 5, 130, "#ffffff", "36px sans-serif", "left");
-        ctx.font = '72px sans-serif';
-        ctx.fillStyle = "#080808";
-        ctx.fillText(`Rank:`, 50,270);
-        ctx.fillText(`Points:`, 50, 355);
-        ctx.fillText(`Wins:`, 50, 440);
-        ctx.fillText(`Losses:`, 50, 525);
-        ctx.textAlign = "center";
-        ctx.fillText(`${player.rank}`, 400, 270);
-        ctx.fillText(`${player.points}`, 400, 355);
-        ctx.fillText(`${player.wins}`, 400, 440);
-        ctx.fillText(`${player.losses}`, 400, 525);
-        ImageUtils.printAvatar(ctx, avatar, 24, 16, 125)
+        ImageUtils.printText(ctx, `${player.username}`, canvas.width / 2, 535, "#ffffff", "72px sans-serif", "center");
+        ImageUtils.printText(ctx, `Points:`, canvas.width / 5, 600, "#ffffff", "50px sans-serif", "left");
+        ImageUtils.printText(ctx, `Wins:`, canvas.width / 5, 660, "#ffffff", "50px sans-serif", "left");
+        ImageUtils.printText(ctx, `Losses:`, canvas.width / 5, 720, "#ffffff", "50px sans-serif", "left");
+        ImageUtils.printText(ctx, `${player.points}`, canvas.width / 1.5, 600, "#ffffff", "50px sans-serif", "center");
+        ImageUtils.printText(ctx, `${player.wins}`, canvas.width / 1.5, 660, "#ffffff", "50px sans-serif", "center");
+        ImageUtils.printText(ctx, `${player.losses}`, canvas.width / 1.5, 720, "#ffffff", "50px sans-serif", "center");
+        ImageUtils.printText(ctx, `${ImageUtils.ordinalSuffixOf(player.rank)}`, 155, 435, "#ffffff", "80px sans-serif", "center");
+        ImageUtils.printAvatar(ctx, avatar, 249, 144, 300);
 
-        return new MessageAttachment( canvas.toBuffer(),`${player.username}-profile.png`);
+        return new AttachmentBuilder( canvas.toBuffer(), {name: `${player.username}-profile.png`});
     }
 }

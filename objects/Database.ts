@@ -9,6 +9,9 @@ export default class Database {
     private _games: Collection;
     private _teams: Collection;
 
+    private _tournamentPlayers: Collection;
+    private _tournamentTeams: Collection;
+
     async init() {
         const client: MongoClient = new MongoClient(`mongodb://${config.mongo.username}:${config.mongo.password}@technowizzy.dev:27017/?authMechanism=DEFAULT`);
         await client.connect();
@@ -18,7 +21,8 @@ export default class Database {
         this.players = valDb.collection("players");
         this.teams = valDb.collection("teams");
         this.games = valDb.collection("games");
-        await bot.logger.info("Connected to MongoDB");
+        this.tournamentPlayers = valDb.collection("tournament-teams");
+        this.tournamentTeams = valDb.collection("tournament-players");
     }
 
     get students(): Collection {
@@ -51,6 +55,22 @@ export default class Database {
 
     set teams(value: Collection) {
         this._teams = value;
+    }
+
+    get tournamentPlayers(): Collection {
+        return this._tournamentPlayers;
+    }
+
+    set tournamentPlayers(value: Collection) {
+        this._tournamentPlayers = value;
+    }
+
+    get tournamentTeams(): Collection {
+        return this._tournamentTeams;
+    }
+
+    set tournamentTeams(value: Collection) {
+        this._tournamentTeams = value;
     }
 
     public async updateRankings() {

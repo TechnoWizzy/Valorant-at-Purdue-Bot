@@ -5,7 +5,7 @@ import * as express from "express";
 import * as nodemailer from "nodemailer";
 import {
     ButtonInteraction,
-    CommandInteraction,
+    CommandInteraction, Events,
     GuildMember,
     Interaction,
     Message,
@@ -18,6 +18,8 @@ import Student from "./objects/Student";
 import InteractionStatus, {InteractionType} from "./objects/InteractionStatus";
 import {Router} from "./objects/Router";
 import PurdueModal from "./objects/modals/Purdue.Modal";
+import Verifier from "./objects/Verifier";
+import TournamentModal from "./objects/modals/Tournament.Modal";
 
 export const bot = new Bot();
 
@@ -30,7 +32,7 @@ bot.login(config.token).then(async () => {
     })
 });
 
-bot.on('interactionCreate', (interaction: Interaction) => {
+bot.on(Events.InteractionCreate, (interaction: Interaction) => {
     let status: Promise<InteractionStatus>;
     if (interaction.isButton()) status = receiveButton(interaction);
     if (interaction.isSelectMenu()) status = receiveSelectMenu(interaction);
@@ -43,24 +45,12 @@ bot.on('interactionCreate', (interaction: Interaction) => {
             if (interaction.isRepliable()) {
                 interaction.reply({content: "Sorry, that didn't work.", ephemeral: true}).catch();
             }
-            bot.logger.error(`${response.type} by ${response.user.username} failed.`, response.error).catch();
+            bot.logger.error(`${response.type} by ${response.user.username} failed.`, response.error);
         }
     }).catch((error) => {
-        bot.logger.error(`Unknown Interaction failed.`, error).catch();
+        bot.logger.error(`Unknown Interaction failed.`, error);
     });
 });
-
-bot.on("messageCreate", (message: Message) => {
-    receiveMessage(message).catch();
-})
-
-/**
- * Executes logic on a new Message
- * @param message
- */
-async function receiveMessage(message: Message) {
-
-}
 
 /**
  * Executes logic on a Command Interaction
@@ -103,6 +93,8 @@ async function receiveButton(interaction: ButtonInteraction): Promise<Interactio
                 } else {
                     await interaction.showModal(new PurdueModal());
                 }
+            } else if (role.id == config.roles.tournament) {
+                await interaction.showModal(new TournamentModal());
             } else {
                 if (member.roles.cache.has(role.id)) {
                     const response = await removeRankedRoles(member, role);
@@ -155,42 +147,53 @@ async function receiveSelectMenu(interaction: SelectMenuInteraction): Promise<In
  */
 async function receiveModal(interaction: ModalSubmitInteraction): Promise<InteractionStatus> {
     const user: User = interaction.user;
-    const email: string = interaction.fields.getTextInputValue("email");
 
-    try {
-        if (!isValidEmail(email)) {
-            await interaction.reply({content: `The address you provided, \`${email}\`, is invalid. Please provide a valid Purdue address.`, ephemeral: true});
-        } else {
-            const username = user.username;
-            const student = new Student(user.id, username, email, 0, false);
-            const hash = encrypt(user.id + "-" + Date.now());
-            const token = hash.iv + "-" + hash.content;
-            const url = `https://www.technowizzy.dev/api/v1/students/verify/${token}`;
-            await Student.post(student);
-            await sendEmail(email, url);
-            await interaction.reply({content: `An email was sent to \`${email}\`.`, ephemeral: true});
+    if (interaction.customId == "purdue") {
+        const email: string = interaction.fields.getTextInputValue("email");
+
+        try {
+            if (!Verifier.isValidEmail(email)) {
+                await interaction.reply({content: `The address you provided, \`${email}\`, is invalid. Please provide a valid Purdue address.`, ephemeral: true});
+            } else {
+                const username = user.username;
+                const student = new Student(user.id, username, email, false);
+                const hash = Verifier.encrypt(user.id + "-" + Date.now());
+                const token = hash.iv + "-" + hash.content;
+                const url = `https://www.technowizzy.dev/api/v1/students/verify/${token}`;
+                await student.save();
+                await Verifier.sendEmail(email, url);
+                await bot.verifier.insert(user, interaction);
+                await interaction.reply({content: `An email was sent to \`${email}\`.`, ephemeral: true});
+            }
+
+
+        } catch (error) {
+            return new InteractionStatus(InteractionType.Modal, user, false, error);
         }
 
-        return new InteractionStatus(InteractionType.Modal, user, true, null);
-    } catch (error) {
-        return new InteractionStatus(InteractionType.Modal, user, false, error);
+    } else if (interaction.customId == "tournament") {
+        const riotId: string = interaction.fields.getTextInputValue("riotId");
+        await interaction.reply({content: `Hi, ${user.username}! Your Riot ID is: ${riotId}`, ephemeral: true});
     }
+
+    return new InteractionStatus(InteractionType.Modal, user, true, null);
+
 }
 
 async function applyRankedRoles(member: GuildMember, role: Role): Promise<string> {
     await member.roles.add(role.id);
-        switch (role.id) {
-            case config.roles.ranks.radiant: return config.roles.ranks.onMessages.radiant;
-            case config.roles.ranks.immortal: return config.roles.ranks.onMessages.immortal;
-            case config.roles.ranks.ascendant: return config.roles.ranks.onMessages.ascendant;
-            case config.roles.ranks.diamond: return config.roles.ranks.onMessages.diamond;
-            case config.roles.ranks.platinum: return config.roles.ranks.onMessages.platinum;
-            case config.roles.ranks.gold: return config.roles.ranks.onMessages.gold;
-            case config.roles.ranks.silver: return config.roles.ranks.onMessages.silver;
-            case config.roles.ranks.bronze: return config.roles.ranks.onMessages.bronze;
-            case config.roles.ranks.iron: return config.roles.ranks.onMessages.iron;
-        }
-        return undefined;
+    switch (role.id) {
+        case config.roles.ranks.radiant: return config.roles.ranks.onMessages.radiant;
+        case config.roles.ranks.immortal: return config.roles.ranks.onMessages.immortal;
+        case config.roles.ranks.ascendant: return config.roles.ranks.onMessages.ascendant;
+        case config.roles.ranks.diamond: return config.roles.ranks.onMessages.diamond;
+        case config.roles.ranks.platinum: return config.roles.ranks.onMessages.platinum;
+        case config.roles.ranks.gold: return config.roles.ranks.onMessages.gold;
+        case config.roles.ranks.silver: return config.roles.ranks.onMessages.silver;
+        case config.roles.ranks.bronze: return config.roles.ranks.onMessages.bronze;
+        case config.roles.ranks.iron: return config.roles.ranks.onMessages.iron;
+    }
+    return undefined;
 }
 
 async function removeRankedRoles(member: GuildMember, role: Role) {
@@ -208,63 +211,3 @@ async function removeRankedRoles(member: GuildMember, role: Role) {
     }
     return undefined;
 }
-
-/**
- * Parses the provided email address and confirms that is valid
- * @param email the provided email address
- */
-function isValidEmail(email): boolean {
-    let emailRegEx = new RegExp(/^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/m);
-    let matches = email.toLowerCase().match(emailRegEx);
-    if (matches != null) {
-        return matches[0].endsWith('@purdue.edu') || matches[0].endsWith('@alumni.purdue.edu') || matches[0].endsWith("@student.purdueglobal.edu");
-    }
-    return false;
-}
-
-/**
- * Sends an authentication code to a provided email address
- * @param email
- * @param link
- */
-async function sendEmail(email, link) {
-    let transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-            user: config.email.username,
-            pass: config.email.password
-        }
-    });
-    let mailOptions = {
-        from: config.email.username,
-        to: email,
-        subject: 'PUGG Discord Account Verification',
-        text:
-            `Click this link to verify your account!
-            \nLink: ${link}
-            \nClick the \'Purdue Button\' in #verify to finalize verification!`
-    };
-
-    await transporter.sendMail(mailOptions, async function (error, info) {
-        if (error) await bot.logger.error(`An error occurred sending an email to ${email}`, error);
-        else await bot.logger.info("Verification email sent");
-    });
-}
-
-/**
- * Encrypts a string
- * @param text
- */
-const encrypt = (text) => {
-
-    const iv = crypto.randomBytes(16);
-
-    const cipher = crypto.createCipheriv("aes-256-ctr", config.key, iv);
-
-    const encrypted = Buffer.concat([cipher.update(text), cipher.final()]);
-
-    return {
-        iv: iv.toString('hex'),
-        content: encrypted.toString('hex')
-    };
-};

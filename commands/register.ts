@@ -29,7 +29,7 @@ module.exports = {
             await interaction.reply({content: "You are already registered", ephemeral: true});
             return;
         }
-        const username = (interaction instanceof ChatInputCommandInteraction) ? interaction.options.getString("username") : interaction.user.username;
+        const username = (interaction instanceof ChatInputCommandInteraction) ? interaction.options.getString("username") ?? interaction.user.username : interaction.user.username;
         if (!isValidUsername(username)) {
             await interaction.reply({content: `The username, \`${username}\`, is invalid. Try using /register with a different username.`});
             return;

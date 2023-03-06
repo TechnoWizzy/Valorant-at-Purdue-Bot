@@ -4,6 +4,7 @@
     "target": "es2018",
     "sourceMap": false,
     "resolveJsonModule": true,
+    "outDir": "out",
     "lib": [
       "es6",
       "dom"

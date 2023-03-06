@@ -12,7 +12,7 @@ export default class GameImage {
         const panel = await Canvas.loadImage("./media/panel.png");
         const gray = await Canvas.loadImage("./media/gray.png");
         const logo = await Canvas.loadImage("./media/logo.png");
-        const map = await Canvas.loadImage(`./media/maps/${game.map.replace(/ /g,"_").toLowerCase()}.jpg`);
+        const map = await Canvas.loadImage(`./media/maps/${game.map.replace(/ /g,"_").toLowerCase()}.png`);
 
         ImageUtils.printImage(ctx, background, 0, 0, canvas.width, canvas.height);
         ImageUtils.printImage(ctx, gray, 10, 75, canvas.width - 20, canvas.height - 85);

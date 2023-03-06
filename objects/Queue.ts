@@ -3,7 +3,7 @@ import {bot} from "../index";
 import Player from "./Player";
 import Game from "./Game";
 import QueueEmbed from "./embeds/Queue.Embed";
-import QueueRow from "./rows/Queue.Row";
+import QueueRow from "./components/Queue.Row";
 
 export default class Queue extends Map<string, NodeJS.Timeout>{
     private _time: number;

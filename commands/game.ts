@@ -32,7 +32,7 @@ module.exports = {
         if (subcommand == "info") {
             const teamOne = await Team.get(game.teamOne);
             const teamTwo = await Team.get(game.teamTwo);
-            const map = new AttachmentBuilder(`./maps/${game.map.replace(/ /g,"_").toLowerCase()}.jpg`, {name: "map.jpg"});
+            const map = new AttachmentBuilder(`./media/maps/${game.map.replace(/ /g,"_").toLowerCase()}.png`, {name: "map.jpg"});
             const embed= new GameEmbed(game, teamOne, teamTwo).setImage("attachment://map.jpg");
             await interaction.reply({embeds: [embed], files: [map]});
         }

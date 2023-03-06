@@ -15,6 +15,7 @@ import Logger from "./Logger";
 import {SlashCommandBuilder} from "@discordjs/builders";
 import Database from "./Database";
 import {bot} from "../index";
+import Verifier from "./Verifier";
 
 const options = {
     intents: [
@@ -29,6 +30,7 @@ export default class Bot extends Client{
     private _queue: Queue;
     private _logger: Logger;
     private _database: Database;
+    private _verifier: Verifier;
     private _commands: Collection<any, any>;
 
     constructor() {
@@ -68,6 +70,14 @@ export default class Bot extends Client{
         this._database = value;
     }
 
+    get verifier(): Verifier {
+        return this._verifier;
+    }
+
+    set verifier(value: Verifier) {
+        this._verifier = value;
+    }
+
     get commands() {
         return this._commands;
     }
@@ -80,6 +90,7 @@ export default class Bot extends Client{
         this.logger = new Logger(await this._guild.channels.fetch(config.channels.log) as TextChannel);
         this.queue = new Queue(await this._guild.channels.fetch(config.channels["10mans"]) as TextChannel);
         this.database = new Database();
+        this.verifier = new Verifier();
 
         switch (config.status.type) {
             case "PLAYING": bot.user.setActivity({name: config.status.name, type: ActivityType.Playing}); break;

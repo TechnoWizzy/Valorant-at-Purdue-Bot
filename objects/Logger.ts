@@ -1,62 +1,22 @@
-import {EmbedBuilder, TextChannel} from "discord.js";
+import {Colors, TextChannel} from "discord.js";
+import LogEmbed from "./embeds/Log.Embed";
 
 export default class Logger {
-    private channel: TextChannel;
+    private readonly _channel: TextChannel;
 
     constructor(channel: TextChannel) {
-        this.channel = channel;
+        this._channel = channel;
     }
 
-    async fatal(info: string, error) {
-        const log = this.buildLog(LogLevel.fatal, info, error);
-        await this.channel.send({content: "<@!751910711218667562>",embeds: [log]});
+    public get channel() {
+        return this._channel;
     }
 
-    async error(info: string, error) {
-        const log = this.buildLog(LogLevel.error, info, error);
-        await this.channel.send({embeds: [log]});
+    public info(content: string): void {
+        if (this.channel) this.channel.send({embeds: [new LogEmbed(content, null, Colors.Blue)]}).catch();
     }
 
-    async warn(info: string) {
-        const log = this.buildLog(LogLevel.warn, info);
-        await this.channel.send({embeds: [log]});
+    public error(content: string = null, error: Error): void {
+        if (this.channel) this.channel.send({embeds: [new LogEmbed(content, error.message, Colors.DarkOrange)]}).catch();
     }
-
-    async info(info: string) {
-        const log = this.buildLog(LogLevel.info, info);
-        await this.channel.send({embeds: [log]});
-    }
-
-    async debug(info: string) {
-        const log = this.buildLog(LogLevel.debug, info);
-        await this.channel.send({embeds: [log]});
-    }
-
-    async trace(info: string) {
-        const log = this.buildLog(LogLevel.trace, info);
-        await this.channel.send({embeds: [log]});
-    }
-
-    buildLog(level: LogLevel, info: string, error = null) {
-        const embed = new EmbedBuilder().setTitle(info);
-        if (level < 2) embed.setDescription(error.message + "\n" + error.stack);
-        switch (level) {
-            case 0: embed.setColor("Red"); break;
-            case 1: embed.setColor("Orange"); break;
-            case 2: embed.setColor("Yellow"); break;
-            case 3: embed.setColor("Green"); break;
-            case 4: embed.setColor("Blue"); break;
-            case 5: embed.setColor("DarkBlue"); break;
-        }
-        return embed;
-    }
-}
-
-export enum LogLevel {
-    fatal,
-    error,
-    warn,
-    info,
-    debug,
-    trace
 }

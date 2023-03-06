@@ -3,6 +3,7 @@ import {
     ButtonBuilder,
     ButtonStyle,
     ChatInputCommandInteraction,
+    Colors,
     EmbedBuilder,
     MessageReplyOptions,
 } from "discord.js"
@@ -23,6 +24,7 @@ module.exports = {
                 {name: "welcome", value: "welcome_menu"},
                 {name: "roles", value: "roles_menu"},
                 {name: "ranks", value: "ranks_menu"},
+                {name: "tournament", value: "tournament_menu"}
             )
         ),
 
@@ -33,9 +35,28 @@ module.exports = {
             case "ranks_menu": await interaction.channel.send(buildRanksMenu()); break;
             case "roles_menu": await interaction.channel.send(buildRolesMenu()); break;
             case "welcome_menu": await interaction.channel.send(buildWelcomeMenu()); break;
+            case "tournament_menu": await interaction.channel.send(buildTournamentMenu()); break;
         }
         await interaction.reply({content: "Success", ephemeral: true});
     }
+}
+
+function buildTournamentMenu(): MessageReplyOptions {
+    const embed = new EmbedBuilder()
+        .setColor(Colors.Gold)
+        .setTitle("A Valorant At Purdue Tournament")
+        .setDescription("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Mauris diam dui, sagittis accumsan tellus non, rutrum venenatis diam. Quisque iaculis pellentesque dapibus. Mauris at sagittis elit. Integer ornare justo dolor.\nSign up now with the button below!")
+
+    const row = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId(config.roles.tournament)
+                .setLabel("Sign Up")
+                .setStyle(ButtonStyle.Success)
+                .setEmoji(config.emotes.logo)
+        );
+
+    return {embeds: [embed], components: [row]};
 }
 
 function buildVerificationMenu(): MessageReplyOptions {

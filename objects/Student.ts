@@ -1,23 +1,22 @@
 import {bot} from "../index";
+import {Filter, UpdateFilter, UpdateOptions} from "mongodb";
 
 export default class Student {
     private _id: string;
     private _username: string;
     private _email: string;
-    private _code: number;
     private _status: boolean;
 
-    constructor(id: string, username: string, email: string, code: number, status: boolean) {
+    constructor(id: string, username: string, email: string, status: boolean) {
         this._id = id;
         this._username = username;
         this._email = email;
-        this._code = code;
         this._status = status;
     }
 
     static fromObject(object) {
         if (object == null) return null;
-        return new Student(object._id, object._username, object._email, object._code, object._status);
+        return new Student(object._id, object._username, object._email, object._status);
     }
 
     get id(): string {
@@ -44,14 +43,6 @@ export default class Student {
         this._email = value;
     }
 
-    get code(): number {
-        return this._code;
-    }
-
-    set code(value: number) {
-        this._code = value;
-    }
-
     get status(): boolean {
         return this._status;
     }
@@ -60,39 +51,21 @@ export default class Student {
         this._status = value;
     }
 
-    async save() {
-        await Student.put(this);
+    public async save() {
+        const query: Filter<any> = {_id: this.id};
+        const update: UpdateFilter<any> = {$set: this};
+        const options: UpdateOptions = {upsert: true};
+        await bot.database.students.updateOne(query, update, options);
     }
 
-    static async get(id: string) {
+    public static async get(id: string): Promise<Student> {
         try {
             const query = { _id: id };
-            const student = Student.fromObject(await bot.database.students.findOne(query));
-
-            if (student) {
-                return student;
-            }
+            const document = await bot.database.students.findOne(query);
+            if (!document) return null;
+            return Student.fromObject(document);
         } catch (error) {
-            return undefined;
+            return null;
         }
-    }
-
-    static async post(student: Student) {
-        try {
-            const Student = (student);
-            return bot.database.students.insertOne(Student as unknown);
-
-        } catch (error) {
-            console.error(error);
-            return undefined;
-        }
-    }
-
-    static async put(student: Student) {
-        await bot.database.students.updateOne({ _id: (student.id) }, { $set: student });
-    }
-
-    static async delete(student: Student) {
-        await bot.database.students.deleteOne({ _id: (student.id) });
     }
 }
